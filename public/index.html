@@ -1,0 +1,1874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart-Bus G4</title>
+<style>
+/* ── Reset & Tokens ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:           #0a0a12;
+  --surface:      #12121e;
+  --card:         #1a1a28;
+  --card-hover:   #1f1f30;
+  --border:       rgba(255,255,255,0.07);
+  --border-mid:   rgba(255,255,255,0.12);
+  --accent:       #7c3aed;
+  --accent-dim:   #5b21b6;
+  --accent-glow:  rgba(124,58,237,0.3);
+  --amber:        #f59e0b;
+  --amber-glow:   rgba(245,158,11,0.22);
+  --green:        #10b981;
+  --green-glow:   rgba(16,185,129,0.3);
+  --red:          #ef4444;
+  --text:         #f1f5f9;
+  --text-2:       #94a3b8;
+  --text-3:       #475569;
+  --radius:       16px;
+  --radius-sm:    10px;
+  --sidebar-w:    220px;
+  --tabbar-h:     68px;
+  --transition:   0.18s ease;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; line-height: 1.5; }
+button { cursor: pointer; font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+a { color: inherit; text-decoration: none; }
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+#app { display: flex; height: 100%; overflow: hidden; }
+
+/* Sidebar (desktop) */
+#sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 0;
+}
+.sidebar-logo {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-logo .logo-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo-icon {
+  width: 36px; height: 36px;
+  background: var(--accent);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+.logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+.logo-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+.sidebar-nav { padding: 12px 10px; flex: 1; }
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background var(--transition), color var(--transition);
+  user-select: none;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover { background: var(--card); color: var(--text); }
+.nav-item.active { background: var(--accent-glow); color: var(--text); }
+.nav-item.active .nav-icon { color: var(--accent); }
+.nav-icon { font-size: 18px; width: 22px; text-align: center; }
+
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  display: inline-block;
+  margin-right: 6px;
+  box-shadow: 0 0 6px var(--green);
+}
+
+/* Content area */
+#content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+  position: relative;
+}
+.section { display: none; }
+.section.active { display: block; }
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 32px 0;
+  margin-bottom: 24px;
+}
+.section-title { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+.section-subtitle { font-size: 13px; color: var(--text-2); margin-top: 2px; }
+
+/* Bottom tab bar (mobile) */
+#tabbar {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: var(--tabbar-h);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: none;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 8px;
+  z-index: 100;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.tab-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  transition: color var(--transition);
+  border: none; background: none;
+  min-width: 60px;
+}
+.tab-btn .tab-icon { font-size: 22px; }
+.tab-btn.active { color: var(--accent); }
+
+@media (max-width: 767px) {
+  #sidebar { display: none; }
+  #tabbar { display: flex; }
+  #content { padding-bottom: var(--tabbar-h); }
+  .section-header { padding: 20px 16px 0; margin-bottom: 16px; }
+}
+@media (min-width: 768px) {
+  #tabbar { display: none !important; }
+}
+
+/* ── Btn styles ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600;
+  border: none;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dim); box-shadow: 0 0 20px var(--accent-glow); }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border-mid); }
+.btn-ghost:hover { background: var(--card); color: var(--text); }
+.btn-danger { background: transparent; color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+.btn-danger:hover { background: rgba(239,68,68,0.1); }
+.btn-icon { padding: 7px; border-radius: 8px; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+/* ── Room pills ─────────────────────────────────────────────────────────── */
+.room-pills {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 0 32px 20px;
+  align-items: center;
+}
+.room-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  font-size: 13px; font-weight: 500;
+  color: var(--text-2);
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.room-pill:hover { border-color: var(--border-mid); color: var(--text); }
+.room-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 16px var(--accent-glow); }
+.room-pill-add { border-style: dashed; color: var(--text-3); }
+.room-pill-add:hover { color: var(--accent); border-color: var(--accent); }
+
+@media (max-width: 767px) {
+  .room-pills { padding: 0 16px 16px; }
+}
+
+/* ── Room content ───────────────────────────────────────────────────────── */
+.room-content { padding: 0 32px 32px; }
+.room-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.room-header-title { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.room-header-actions { display: flex; gap: 8px; }
+
+@media (max-width: 767px) {
+  .room-content { padding: 0 16px 24px; }
+}
+
+/* ── Light cards ────────────────────────────────────────────────────────── */
+.lights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+@media (max-width: 767px) {
+  .lights-grid { grid-template-columns: 1fr; }
+}
+
+.light-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.light-card::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: var(--radius);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.light-card.on { border-color: rgba(245,158,11,0.35); box-shadow: 0 0 30px var(--amber-glow), inset 0 0 30px rgba(245,158,11,0.04); }
+.light-card.on::before { background: radial-gradient(ellipse at top, rgba(245,158,11,0.08) 0%, transparent 70%); opacity: 1; }
+.light-card:hover { background: var(--card-hover); }
+
+.light-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+.light-icon {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  transition: all 0.3s ease;
+}
+.light-card.on .light-icon { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); box-shadow: 0 0 12px rgba(245,158,11,0.3); }
+.light-status {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  padding: 3px 9px; border-radius: 99px;
+  background: var(--surface); color: var(--text-3);
+}
+.light-card.on .light-status { background: rgba(245,158,11,0.2); color: var(--amber); }
+
+.light-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.light-meta { font-size: 12px; color: var(--text-3); }
+
+.light-toggle {
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px; font-weight: 600;
+  transition: all var(--transition);
+}
+.light-card.on .light-toggle { background: var(--amber); border-color: var(--amber); color: #000; box-shadow: 0 0 16px rgba(245,158,11,0.4); }
+.light-toggle:hover { opacity: 0.85; }
+
+/* ── Icon picker ─────────────────────────────────────────────────────────── */
+.icon-picker { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; margin-top: 8px; }
+.icon-opt {
+  aspect-ratio: 1; background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 8px; cursor: pointer; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; user-select: none;
+}
+.icon-opt:hover { background: var(--card-hover); border-color: var(--accent); transform: scale(1.1); }
+.icon-opt.selected { background: var(--accent-dim); border-color: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+
+/* ── Scenes ─────────────────────────────────────────────────────────────── */
+.scenes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  padding: 0 32px 32px;
+}
+@media (max-width: 767px) { .scenes-grid { padding: 0 16px 24px; grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 400px) { .scenes-grid { grid-template-columns: 1fr; } }
+
+.scene-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 18px 18px;
+  position: relative;
+  transition: all 0.25s ease;
+}
+.scene-card:hover { background: var(--card-hover); border-color: var(--border-mid); }
+.scene-card-actions {
+  position: absolute; top: 12px; right: 12px;
+  display: flex; gap: 4px;
+  opacity: 0; transition: opacity var(--transition);
+}
+.scene-card:hover .scene-card-actions { opacity: 1; }
+.scene-icon { font-size: 40px; display: block; margin-bottom: 12px; line-height: 1; }
+.scene-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.scene-meta { font-size: 12px; color: var(--text-3); margin-bottom: 16px; }
+.btn-activate {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.3px;
+  transition: all var(--transition);
+}
+.btn-activate:hover { background: var(--accent-dim); box-shadow: 0 0 20px var(--accent-glow); }
+
+@keyframes pulse-green {
+  0%   { box-shadow: 0 0 0 0 var(--green-glow); border-color: var(--green); }
+  50%  { box-shadow: 0 0 30px 8px var(--green-glow); border-color: var(--green); }
+  100% { box-shadow: 0 0 0 0 transparent; border-color: var(--border); }
+}
+.scene-card.activated { animation: pulse-green 1.2s ease forwards; }
+
+/* ── Schedules ──────────────────────────────────────────────────────────── */
+.schedules-list { padding: 0 32px 32px; display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 767px) { .schedules-list { padding: 0 16px 24px; } }
+
+.sched-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  display: flex; align-items: center; gap: 16px;
+  transition: all var(--transition);
+}
+.sched-card:hover { background: var(--card-hover); }
+.sched-card.disabled { opacity: 0.5; }
+.sched-info { flex: 1; min-width: 0; }
+.sched-name { font-size: 15px; font-weight: 600; margin-bottom: 3px; }
+.sched-time { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.sched-action { font-size: 12px; color: var(--text-3); }
+.day-chips { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+.day-chip {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: var(--text-3);
+  letter-spacing: 0;
+}
+.day-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sched-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ── Toggle pill ────────────────────────────────────────────────────────── */
+.toggle-pill {
+  position: relative;
+  width: 44px; height: 24px;
+  cursor: pointer;
+}
+.toggle-pill input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute; inset: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: 99px;
+  transition: all var(--transition);
+}
+.toggle-pill input:checked ~ .toggle-track { background: var(--accent); border-color: var(--accent); }
+.toggle-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  background: var(--text-3);
+  border-radius: 50%;
+  transition: all var(--transition);
+}
+.toggle-pill input:checked ~ .toggle-track .toggle-thumb { transform: translateX(20px); background: #fff; }
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+.settings-wrap { padding: 0 32px 32px; display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 767px) { .settings-wrap { padding: 0 16px 24px; } }
+
+.accordion {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.accordion-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+}
+.accordion-header:hover { background: var(--card-hover); }
+.accordion-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.accordion-chevron {
+  color: var(--text-3);
+  transition: transform var(--transition);
+  font-size: 12px;
+}
+.accordion.open .accordion-chevron { transform: rotate(180deg); }
+.accordion-body { display: none; padding: 0 20px 20px; border-top: 1px solid var(--border); }
+.accordion.open .accordion-body { display: block; }
+
+.list-item {
+  display: flex; align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+.list-item:last-child { border-bottom: none; }
+.list-item-icon { font-size: 20px; }
+.list-item-info { flex: 1; }
+.list-item-name { font-size: 14px; font-weight: 500; }
+.list-item-meta { font-size: 12px; color: var(--text-3); }
+.list-item-actions { display: flex; gap: 4px; }
+
+.settings-form { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.form-row { display: flex; flex-direction: column; gap: 5px; }
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; }
+.form-input {
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  width: 100%;
+}
+.form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.form-input:disabled { opacity: 0.5; cursor: not-allowed; }
+select.form-input { cursor: pointer; }
+
+/* ── Modal ──────────────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.modal-backdrop.show { opacity: 1; pointer-events: all; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: 20px;
+  width: 100%; max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+  transform: scale(0.95) translateY(10px);
+  transition: transform 0.2s ease;
+  position: relative;
+}
+.modal-backdrop.show .modal { transform: scale(1) translateY(0); }
+
+.modal-title {
+  font-size: 20px; font-weight: 700;
+  margin-bottom: 24px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-close {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--card);
+  border: none;
+  color: var(--text-2);
+  font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+.modal-close:hover { background: var(--card-hover); color: var(--text); }
+
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+
+@media (max-width: 767px) {
+  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .modal { border-bottom-left-radius: 0; border-bottom-right-radius: 0; max-height: 92vh; transform: translateY(30px); }
+  .modal-backdrop.show .modal { transform: translateY(0); }
+}
+
+/* ── Emoji/color pickers ────────────────────────────────────────────────── */
+.emoji-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 8px; }
+.emoji-option {
+  height: 42px;
+  background: var(--card);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+}
+.emoji-option:hover { background: var(--card-hover); }
+.emoji-option.selected { border-color: var(--accent); background: var(--accent-glow); }
+
+.color-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.color-swatch {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: all var(--transition);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+.color-swatch:hover { transform: scale(1.15); }
+.color-swatch.selected { outline-color: var(--text); }
+
+/* ── Scene actions list ─────────────────────────────────────────────────── */
+.actions-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; margin-bottom: 8px; }
+.action-item {
+  display: flex; align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  gap: 10px;
+  font-size: 13px;
+}
+.action-item-text { flex: 1; }
+.action-level { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 99px; }
+.action-level.on { background: rgba(245,158,11,0.2); color: var(--amber); }
+.action-level.off { background: var(--surface); color: var(--text-3); }
+
+/* ── Days of week ───────────────────────────────────────────────────────── */
+.days-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.day-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--border-mid);
+  color: var(--text-2);
+  font-size: 11px; font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.day-btn:hover { border-color: var(--accent); color: var(--accent); }
+.day-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.days-quick { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.days-quick .btn { font-size: 11px; padding: 5px 12px; }
+
+/* ── Trigger type ───────────────────────────────────────────────────────── */
+.radio-group { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.radio-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-mid);
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.radio-btn:hover { border-color: var(--accent); color: var(--accent); }
+.radio-btn.active { background: var(--accent-glow); border-color: var(--accent); color: var(--text); }
+
+/* ── Confirm modal ──────────────────────────────────────────────────────── */
+.confirm-modal-body { font-size: 15px; color: var(--text-2); margin-bottom: 4px; }
+
+/* ── Empty states ───────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-3);
+}
+.empty-icon { font-size: 48px; margin-bottom: 16px; }
+.empty-title { font-size: 18px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; }
+.empty-desc { font-size: 14px; }
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+#toast-container { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+@media (min-width: 768px) { #toast-container { bottom: 24px; } }
+.toast {
+  background: var(--card);
+  border: 1px solid var(--border-mid);
+  border-radius: 99px;
+  padding: 10px 20px;
+  font-size: 13px; font-weight: 500;
+  color: var(--text);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: toast-in 0.3s ease forwards;
+  white-space: nowrap;
+}
+.toast.success { border-color: rgba(16,185,129,0.4); }
+.toast.error { border-color: rgba(239,68,68,0.4); color: var(--red); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(-8px) scale(0.9); }
+}
+
+/* ── Sub-picker ─────────────────────────────────────────────────────────── */
+.sub-picker {
+  background: var(--card);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 8px;
+}
+.sub-picker-step { display: none; }
+.sub-picker-step.active { display: block; }
+.picker-options { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; margin-top: 8px; }
+.picker-option {
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all var(--transition);
+}
+.picker-option:hover { background: var(--card-hover); border-color: var(--accent); color: var(--accent); }
+.level-toggle { display: flex; gap: 8px; margin-top: 8px; }
+.level-btn {
+  flex: 1; padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-mid);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.level-btn.on.active { background: rgba(245,158,11,0.2); border-color: var(--amber); color: var(--amber); }
+.level-btn.off.active { background: var(--card); border-color: var(--border-mid); color: var(--text); }
+.level-btn:hover { border-color: var(--border-mid); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">
+        <div class="logo-icon">💡</div>
+        <div>
+          <div class="logo-text">Smart-Bus G4</div>
+          <div class="logo-sub">Home Automation</div>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-nav">
+      <button class="nav-item active" data-tab="rooms">
+        <span class="nav-icon">🏠</span> Rooms
+      </button>
+      <button class="nav-item" data-tab="scenes">
+        <span class="nav-icon">✨</span> Scenes
+      </button>
+      <button class="nav-item" data-tab="schedules">
+        <span class="nav-icon">⏰</span> Schedules
+      </button>
+      <button class="nav-item" data-tab="settings">
+        <span class="nav-icon">⚙️</span> Settings
+      </button>
+    </div>
+    <div class="sidebar-footer">
+      <span class="status-dot"></span>Connected
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main id="content">
+    <!-- ROOMS -->
+    <section id="sec-rooms" class="section active">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Rooms</div>
+          <div class="section-subtitle" id="rooms-subtitle">Loading…</div>
+        </div>
+      </div>
+      <div class="room-pills" id="room-pills"></div>
+      <div class="room-content" id="room-content"></div>
+    </section>
+
+    <!-- SCENES -->
+    <section id="sec-scenes" class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Scenes</div>
+          <div class="section-subtitle">Activate multiple lights at once</div>
+        </div>
+        <button class="btn btn-primary" onclick="openSceneModal()">+ New Scene</button>
+      </div>
+      <div class="scenes-grid" id="scenes-grid"></div>
+    </section>
+
+    <!-- SCHEDULES -->
+    <section id="sec-schedules" class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Schedules</div>
+          <div class="section-subtitle">Automate your lighting</div>
+        </div>
+        <button class="btn btn-primary" onclick="openScheduleModal()">+ New Schedule</button>
+      </div>
+      <div class="schedules-list" id="schedules-list"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="sec-settings" class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Settings</div>
+          <div class="section-subtitle">Configure your system</div>
+        </div>
+      </div>
+      <div class="settings-wrap" id="settings-wrap"></div>
+    </section>
+  </main>
+</div>
+
+<!-- Tab bar (mobile) -->
+<nav id="tabbar">
+  <button class="tab-btn active" data-tab="rooms"><span class="tab-icon">🏠</span>Rooms</button>
+  <button class="tab-btn" data-tab="scenes"><span class="tab-icon">✨</span>Scenes</button>
+  <button class="tab-btn" data-tab="schedules"><span class="tab-icon">⏰</span>Schedules</button>
+  <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span>Settings</button>
+</nav>
+
+<!-- Modals -->
+<div id="modal-room" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title"><span id="modal-room-title">Add Room</span><button class="modal-close" onclick="closeModal('modal-room')">✕</button></div>
+    <div class="form-row"><label class="form-label">Name</label><input id="room-name" class="form-input" placeholder="e.g. Living Room"></div>
+    <div class="form-row" style="margin-top:16px"><label class="form-label">Icon</label>
+      <div class="emoji-grid" id="room-icon-grid"></div>
+    </div>
+    <div class="form-row" style="margin-top:16px"><label class="form-label">Color</label>
+      <div class="color-grid" id="room-color-grid"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-room')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRoom()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-device" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title"><span id="modal-device-title">Add Device</span><button class="modal-close" onclick="closeModal('modal-device')">✕</button></div>
+    <div class="form-row"><label class="form-label">Name</label><input id="device-name" class="form-input" placeholder="e.g. Dimmer 1.7"></div>
+    <div class="form-row-2" style="margin-top:12px">
+      <div class="form-row"><label class="form-label">Subnet</label><input id="device-subnet" type="number" class="form-input" value="1" min="1"></div>
+      <div class="form-row"><label class="form-label">Device #</label><input id="device-num" type="number" class="form-input" value="1" min="1"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-device')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDevice()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-light" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title"><span id="modal-light-title">Add Device</span><button class="modal-close" onclick="closeModal('modal-light')">✕</button></div>
+    <div class="form-row"><label class="form-label">Name</label><input id="light-name" class="form-input" placeholder="e.g. Water Heater, Main Light, AC…"></div>
+    <div class="form-row" style="margin-top:12px"><label class="form-label">Icon</label>
+      <div class="icon-picker" id="light-icon-picker"></div>
+    </div>
+    <div class="form-row" style="margin-top:12px"><label class="form-label">Room</label>
+      <select id="light-room" class="form-input"></select>
+    </div>
+    <div class="form-row" style="margin-top:12px"><label class="form-label">S-BUS Device (optional)</label>
+      <select id="light-device-sel" class="form-input" onchange="onLightDeviceSel()">
+        <option value="">— Manual entry —</option>
+      </select>
+    </div>
+    <div class="form-row-2" style="margin-top:12px" id="light-manual-row">
+      <div class="form-row"><label class="form-label">Subnet</label><input id="light-subnet" type="number" class="form-input" value="1" min="1"></div>
+      <div class="form-row"><label class="form-label">Device #</label><input id="light-dev-num" type="number" class="form-input" value="1" min="1"></div>
+    </div>
+    <div class="form-row-2" style="margin-top:12px">
+      <div class="form-row"><label class="form-label">Channel</label><input id="light-channel" type="number" class="form-input" value="1" min="1"></div>
+      <div class="form-row"><label class="form-label">Type</label>
+        <select id="light-type" class="form-input">
+          <option value="relay">Relay (on/off)</option>
+          <option value="dimmer">Dimmer</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-light')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLight()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-scene" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title"><span id="modal-scene-title">New Scene</span><button class="modal-close" onclick="closeModal('modal-scene')">✕</button></div>
+    <div class="form-row"><label class="form-label">Name</label><input id="scene-name" class="form-input" placeholder="e.g. Movie Night"></div>
+    <div class="form-row" style="margin-top:16px"><label class="form-label">Icon</label>
+      <div class="emoji-grid" id="scene-icon-grid"></div>
+    </div>
+    <div class="form-row" style="margin-top:16px">
+      <label class="form-label">Actions</label>
+      <div class="actions-list" id="scene-actions-list"></div>
+      <button class="btn btn-ghost btn-sm" onclick="openLightPicker()" style="margin-top:8px">+ Add Light Action</button>
+      <div id="light-picker" class="sub-picker" style="display:none">
+        <div class="sub-picker-step active" id="picker-step-room">
+          <div class="form-label">Select Room</div>
+          <div class="picker-options" id="picker-rooms"></div>
+        </div>
+        <div class="sub-picker-step" id="picker-step-light">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <button class="btn btn-ghost btn-sm" onclick="pickerBack('room')">← Back</button>
+            <span class="form-label">Select Light</span>
+          </div>
+          <div class="picker-options" id="picker-lights"></div>
+        </div>
+        <div class="sub-picker-step" id="picker-step-level">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <button class="btn btn-ghost btn-sm" onclick="pickerBack('light')">← Back</button>
+            <span class="form-label">On or Off?</span>
+          </div>
+          <div class="level-toggle">
+            <button class="level-btn on active" id="level-on" onclick="setPickerLevel(100)">ON</button>
+            <button class="level-btn off" id="level-off" onclick="setPickerLevel(0)">OFF</button>
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="addPickerAction()">Add Action</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-scene')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveScene()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-schedule" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title"><span id="modal-sched-title">New Schedule</span><button class="modal-close" onclick="closeModal('modal-schedule')">✕</button></div>
+    <div class="form-row"><label class="form-label">Name</label><input id="sched-name" class="form-input" placeholder="e.g. Morning Wake-up"></div>
+    <div class="form-row" style="margin-top:16px">
+      <label class="form-label">Trigger</label>
+      <div class="radio-group">
+        <button class="radio-btn active" data-trigger="time" onclick="setTriggerType('time')">Time</button>
+        <button class="radio-btn" data-trigger="sunrise" onclick="setTriggerType('sunrise')">Sunrise</button>
+        <button class="radio-btn" data-trigger="sunset" onclick="setTriggerType('sunset')">Sunset</button>
+      </div>
+    </div>
+    <div id="trigger-time-row" class="form-row" style="margin-top:12px">
+      <label class="form-label">Time</label>
+      <input id="sched-time" type="time" class="form-input" value="07:00">
+    </div>
+    <div id="trigger-offset-row" class="form-row" style="margin-top:12px;display:none">
+      <label class="form-label">Offset (minutes, can be negative)</label>
+      <input id="sched-offset" type="number" class="form-input" value="0" placeholder="0">
+    </div>
+    <div class="form-row" style="margin-top:16px">
+      <label class="form-label">Days</label>
+      <div class="days-row" id="sched-days-row"></div>
+      <div class="days-quick">
+        <button class="btn btn-ghost btn-sm" onclick="setDays('all')">All Days</button>
+        <button class="btn btn-ghost btn-sm" onclick="setDays('weekdays')">Weekdays</button>
+        <button class="btn btn-ghost btn-sm" onclick="setDays('weekends')">Weekends</button>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:16px">
+      <label class="form-label">Action</label>
+      <div class="radio-group">
+        <button class="radio-btn active" data-action="scene" onclick="setActionType('scene')">Activate Scene</button>
+        <button class="radio-btn" data-action="allOff" onclick="setActionType('allOff')">Turn Off All</button>
+      </div>
+    </div>
+    <div id="action-scene-row" class="form-row" style="margin-top:12px">
+      <label class="form-label">Scene</label>
+      <select id="sched-scene" class="form-input"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-schedule')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSchedule()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-confirm" class="modal-backdrop">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title"><span id="confirm-title">Confirm</span><button class="modal-close" onclick="closeModal('modal-confirm')">✕</button></div>
+    <div class="confirm-modal-body" id="confirm-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-confirm')">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  API
+// ═══════════════════════════════════════════════════════════════════════════
+const API = {
+  get:  url        => fetch(url).then(r => r.json()),
+  post: (url,data) => fetch(url,{method:'POST',  headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).then(r=>r.json()),
+  put:  (url,data) => fetch(url,{method:'PUT',   headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).then(r=>r.json()),
+  del:  url        => fetch(url,{method:'DELETE'}).then(r=>r.json()),
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════════════════════════════════════
+const state = {
+  rooms: [], devices: [], scenes: [], schedules: [], settings: {}, lightState: {},
+  activeTab: 'rooms', activeRoomId: null,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Init & data loading
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadAll() {
+  try {
+    const [rooms, devices, scenes, schedules, settings, ls] = await Promise.all([
+      API.get('/api/rooms'), API.get('/api/devices'), API.get('/api/scenes'),
+      API.get('/api/schedules'), API.get('/api/settings'), API.get('/api/state'),
+    ]);
+    state.rooms     = rooms     || [];
+    state.devices   = devices   || [];
+    state.scenes    = scenes    || [];
+    state.schedules = schedules || [];
+    state.settings  = settings  || {};
+    state.lightState = ls || {};
+    if (!state.activeRoomId && state.rooms.length) state.activeRoomId = state.rooms[0].id;
+    renderAll();
+  } catch(e) {
+    toast('Failed to load data — is the server running?', 'error');
+  }
+}
+
+async function pollState() {
+  try {
+    const ls = await API.get('/api/state');
+    state.lightState = ls || {};
+    renderRoomContent();
+  } catch(e) {}
+}
+
+setInterval(pollState, 5000);
+
+function renderAll() {
+  renderRooms();
+  renderScenes();
+  renderSchedules();
+  renderSettings();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Navigation
+// ═══════════════════════════════════════════════════════════════════════════
+function switchTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(`sec-${tab}`).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+}
+
+document.querySelectorAll('[data-tab]').forEach(el => {
+  el.addEventListener('click', () => switchTab(el.dataset.tab));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ROOMS
+// ═══════════════════════════════════════════════════════════════════════════
+function renderRooms() {
+  const pills = document.getElementById('room-pills');
+  const totalLights = state.rooms.reduce((s,r) => s + (r.lights||[]).length, 0);
+  document.getElementById('rooms-subtitle').textContent = `${state.rooms.length} rooms · ${totalLights} devices`;
+
+  pills.innerHTML = state.rooms.map(r => `
+    <button class="room-pill ${r.id === state.activeRoomId ? 'active' : ''}"
+      onclick="selectRoom('${r.id}')"
+      style="${r.id === state.activeRoomId && r.color ? `background:${r.color};border-color:${r.color}` : ''}">
+      ${r.icon || '💡'} ${esc(r.name)}
+    </button>
+  `).join('') + `<button class="room-pill room-pill-add" onclick="openRoomModal()">+ Add Room</button>`;
+
+  renderRoomContent();
+}
+
+function selectRoom(id) {
+  state.activeRoomId = id;
+  renderRooms();
+}
+
+function renderRoomContent() {
+  const el = document.getElementById('room-content');
+  const room = state.rooms.find(r => r.id === state.activeRoomId);
+  if (!room) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏠</div><div class="empty-title">No rooms yet</div><div class="empty-desc">Add a room to get started.</div></div>'; return; }
+
+  const lights = room.lights || [];
+  const allOn  = lights.length > 0 && lights.every(l => (state.lightState[lk(l)] || 0) >= 100);
+  const allOff = lights.every(l => (state.lightState[lk(l)] || 0) === 0);
+
+  el.innerHTML = `
+    <div class="room-header">
+      <div class="room-header-title">${room.icon || '💡'} ${esc(room.name)}</div>
+      <div class="room-header-actions">
+        <button class="btn btn-ghost btn-sm" onclick="roomAllOn('${room.id}')">All On</button>
+        <button class="btn btn-ghost btn-sm" onclick="roomAllOff('${room.id}')">All Off</button>
+      </div>
+    </div>
+    ${lights.length === 0
+      ? `<div class="empty-state" style="padding:40px 0"><div class="empty-icon">💡</div><div class="empty-title">No devices yet</div><div class="empty-desc">Add devices in Settings → Devices</div></div>`
+      : `<div class="lights-grid">${lights.map(l => renderLightCard(l)).join('')}</div>`
+    }
+  `;
+}
+
+function lk(l) { return `${l.subnet}.${l.device}.${l.channel}`; }
+
+function renderLightCard(light) {
+  const lvl = state.lightState[lk(light)] || 0;
+  const on = lvl > 0;
+  return `
+    <div class="light-card ${on ? 'on' : ''}" id="lcard-${lk(light)}">
+      <div class="light-card-top">
+        <div class="light-icon">${light.icon || (on ? '💡' : '🔦')}</div>
+        <span class="light-status">${on ? 'ON' : 'OFF'}</span>
+      </div>
+      <div class="light-name">${esc(light.name)}</div>
+      <div class="light-meta">${light.subnet}.${light.device} ch${light.channel} · ${light.type || 'relay'}</div>
+      <button class="light-toggle" onclick="toggleLight(${light.subnet},${light.device},${light.channel},${lvl})">
+        ${on ? 'Turn Off' : 'Turn On'}
+      </button>
+    </div>
+  `;
+}
+
+async function toggleLight(subnet, device, channel, currentLevel) {
+  const newLevel = currentLevel > 0 ? 0 : 100;
+  const k = `${subnet}.${device}.${channel}`;
+  state.lightState[k] = newLevel; // optimistic
+  renderRoomContent();
+  try {
+    await API.post('/api/light', { subnet, device, channel, level: newLevel });
+  } catch(e) {
+    state.lightState[k] = currentLevel; // revert
+    renderRoomContent();
+    toast('Failed to control light', 'error');
+  }
+}
+
+async function roomAllOn(roomId) {
+  const room = state.rooms.find(r => r.id === roomId);
+  if (!room) return;
+  for (const l of (room.lights || [])) { state.lightState[lk(l)] = 100; }
+  renderRoomContent();
+  for (const l of (room.lights || [])) {
+    try { await API.post('/api/light', { subnet: l.subnet, device: l.device, channel: l.channel, level: 100 }); } catch(e) {}
+  }
+}
+
+async function roomAllOff(roomId) {
+  const room = state.rooms.find(r => r.id === roomId);
+  if (!room) return;
+  for (const l of (room.lights || [])) { state.lightState[lk(l)] = 0; }
+  renderRoomContent();
+  for (const l of (room.lights || [])) {
+    try { await API.post('/api/light', { subnet: l.subnet, device: l.device, channel: l.channel, level: 0 }); } catch(e) {}
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SCENES
+// ═══════════════════════════════════════════════════════════════════════════
+function renderScenes() {
+  const grid = document.getElementById('scenes-grid');
+  if (!state.scenes.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">✨</div>
+      <div class="empty-title">No scenes yet</div>
+      <div class="empty-desc">Create a scene to control multiple lights at once.</div>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = state.scenes.map(s => `
+    <div class="scene-card" id="scard-${s.id}">
+      <div class="scene-card-actions">
+        <button class="btn btn-icon btn-ghost" onclick="openSceneModal('${s.id}')" title="Edit">✏️</button>
+        <button class="btn btn-icon btn-danger" onclick="deleteScene('${s.id}')" title="Delete">🗑️</button>
+      </div>
+      <span class="scene-icon">${s.icon || '✨'}</span>
+      <div class="scene-name">${esc(s.name)}</div>
+      <div class="scene-meta">${(s.actions||[]).length} light action${(s.actions||[]).length !== 1 ? 's' : ''}</div>
+      <button class="btn-activate" onclick="activateScene('${s.id}')">ACTIVATE</button>
+    </div>
+  `).join('');
+}
+
+async function activateScene(sceneId) {
+  const card = document.getElementById(`scard-${sceneId}`);
+  try {
+    await API.post(`/api/scenes/${sceneId}/activate`, {});
+    if (card) { card.classList.add('activated'); setTimeout(() => card.classList.remove('activated'), 1300); }
+    toast('Scene activated');
+    await pollState();
+  } catch(e) {
+    toast('Failed to activate scene', 'error');
+  }
+}
+
+async function deleteScene(id) {
+  const scene = state.scenes.find(s => s.id === id);
+  if (!scene) return;
+  confirm_(`Delete scene "${scene.name}"?`, async () => {
+    await API.del(`/api/scenes/${id}`);
+    state.scenes = state.scenes.filter(s => s.id !== id);
+    renderScenes();
+    toast('Scene deleted');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SCHEDULES
+// ═══════════════════════════════════════════════════════════════════════════
+const DAY_LABELS = ['S','M','T','W','T','F','S'];
+const DAY_NAMES  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function renderSchedules() {
+  const list = document.getElementById('schedules-list');
+  if (!state.schedules.length) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">⏰</div>
+      <div class="empty-title">No schedules yet</div>
+      <div class="empty-desc">Automate your lights with time-based or sun-based triggers.</div>
+    </div>`;
+    return;
+  }
+  list.innerHTML = state.schedules.map(s => {
+    const scene = state.scenes.find(sc => sc.id === s.sceneId);
+    let timeStr = '';
+    if (s.triggerType === 'time') timeStr = `At ${formatTime(s.time)}`;
+    else if (s.triggerType === 'sunrise') timeStr = `Sunrise${s.offset ? ` ${s.offset > 0 ? '+' : ''}${s.offset} min` : ''}`;
+    else if (s.triggerType === 'sunset') timeStr = `Sunset${s.offset ? ` ${s.offset > 0 ? '+' : ''}${s.offset} min` : ''}`;
+
+    const days = s.days || [0,1,2,3,4,5,6];
+    const dayChips = DAY_LABELS.map((d,i) => `<div class="day-chip ${days.includes(i) ? 'active' : ''}">${d}</div>`).join('');
+
+    const action = s.actionType === 'allOff' ? 'Turn off all lights' : scene ? `→ ${scene.name}` : '→ (scene deleted)';
+
+    return `
+      <div class="sched-card ${s.enabled ? '' : 'disabled'}">
+        <div class="sched-info">
+          <div class="sched-name">${esc(s.name)}</div>
+          <div class="sched-time">${timeStr}</div>
+          <div class="sched-action">${action}</div>
+          <div class="day-chips">${dayChips}</div>
+        </div>
+        <div class="sched-controls">
+          <button class="btn btn-icon btn-ghost" onclick="openScheduleModal('${s.id}')" title="Edit">✏️</button>
+          <button class="btn btn-icon btn-danger" onclick="deleteSchedule('${s.id}')" title="Delete">🗑️</button>
+          <label class="toggle-pill" title="${s.enabled ? 'Disable' : 'Enable'}">
+            <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSchedule('${s.id}', this.checked)">
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+          </label>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function formatTime(t) {
+  if (!t) return '';
+  const [h,m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 || 12;
+  return `${hh}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+async function toggleSchedule(id, enabled) {
+  const idx = state.schedules.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  state.schedules[idx].enabled = enabled;
+  renderSchedules();
+  try { await API.put(`/api/schedules/${id}`, { ...state.schedules[idx], enabled }); }
+  catch(e) { state.schedules[idx].enabled = !enabled; renderSchedules(); toast('Failed to update', 'error'); }
+}
+
+async function deleteSchedule(id) {
+  const s = state.schedules.find(s => s.id === id);
+  if (!s) return;
+  confirm_(`Delete schedule "${s.name}"?`, async () => {
+    await API.del(`/api/schedules/${id}`);
+    state.schedules = state.schedules.filter(s => s.id !== id);
+    renderSchedules();
+    toast('Schedule deleted');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════════════════════════════════
+function renderSettings() {
+  const wrap = document.getElementById('settings-wrap');
+
+  // Build rooms list
+  const roomsHtml = state.rooms.map(r => `
+    <div class="list-item">
+      <div class="list-item-icon">${r.icon || '💡'}</div>
+      <div class="list-item-info">
+        <div class="list-item-name">${esc(r.name)}</div>
+        <div class="list-item-meta">${(r.lights||[]).length} light(s)</div>
+      </div>
+      <div class="list-item-actions">
+        <button class="btn btn-icon btn-ghost btn-sm" onclick="openRoomModal('${r.id}')">✏️</button>
+        <button class="btn btn-icon btn-danger btn-sm" onclick="deleteRoom('${r.id}')">🗑️</button>
+      </div>
+    </div>
+  `).join('') + `<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openRoomModal()">+ Add Room</button>`;
+
+  // Build devices list
+  const devicesHtml = state.devices.map(d => `
+    <div class="list-item">
+      <div class="list-item-icon">📡</div>
+      <div class="list-item-info">
+        <div class="list-item-name">${esc(d.name)}</div>
+        <div class="list-item-meta">Subnet ${d.subnet}, Device ${d.device}</div>
+      </div>
+      <div class="list-item-actions">
+        <button class="btn btn-icon btn-ghost btn-sm" onclick="openDeviceModal('${d.id}')">✏️</button>
+        <button class="btn btn-icon btn-danger btn-sm" onclick="deleteDevice('${d.id}')">🗑️</button>
+      </div>
+    </div>
+  `).join('') + `<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openDeviceModal()">+ Add Device</button>`;
+
+  // Build lights per room
+  const lightsHtml = state.rooms.map(r => `
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:6px">${r.icon || '💡'} ${esc(r.name)}</div>
+      ${(r.lights||[]).map(l => `
+        <div class="list-item">
+          <div class="list-item-icon">💡</div>
+          <div class="list-item-info">
+            <div class="list-item-name">${esc(l.name)}</div>
+            <div class="list-item-meta">${l.subnet}.${l.device} ch${l.channel} · ${l.type || 'relay'}</div>
+          </div>
+          <div class="list-item-actions">
+            <button class="btn btn-icon btn-danger btn-sm" onclick="deleteLight('${r.id}','${l.id}')">🗑️</button>
+          </div>
+        </div>
+      `).join('')}
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openLightModal(null,'${r.id}')">+ Add Device</button>
+    </div>
+  `).join('');
+
+  const s = state.settings;
+  const systemHtml = `
+    <div class="settings-form">
+      <div class="form-row">
+        <label class="form-label">SmartGate IP</label>
+        <input id="set-ip" class="form-input" value="${esc(s.gatewayIp || '192.168.86.166')}" placeholder="192.168.86.166">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Server Port</label>
+        <input class="form-input" value="3001" disabled>
+      </div>
+      <div class="form-row-2">
+        <div class="form-row">
+          <label class="form-label">Latitude</label>
+          <input id="set-lat" type="number" step="0.0001" class="form-input" value="${s.latitude || 40.7128}">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Longitude</label>
+          <input id="set-lon" type="number" step="0.0001" class="form-input" value="${s.longitude || -74.006}">
+        </div>
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-start" onclick="saveSettings()">Save Settings</button>
+    </div>
+  `;
+
+  wrap.innerHTML = `
+    ${accordion('acc-rooms',    '🏠', 'Rooms',   roomsHtml)}
+    ${accordion('acc-devices',  '📡', 'Devices', devicesHtml)}
+    ${accordion('acc-lights',   '💡', 'Lights',  lightsHtml)}
+    ${accordion('acc-system',   '⚙️', 'System',  systemHtml)}
+  `;
+
+  // Re-attach accordion toggles
+  wrap.querySelectorAll('.accordion-header').forEach(h => {
+    h.addEventListener('click', () => h.closest('.accordion').classList.toggle('open'));
+  });
+}
+
+function accordion(id, icon, title, body) {
+  return `
+    <div class="accordion" id="${id}">
+      <div class="accordion-header">
+        <div class="accordion-title">${icon} ${title}</div>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">${body}</div>
+    </div>
+  `;
+}
+
+async function saveSettings() {
+  const ip  = document.getElementById('set-ip').value.trim();
+  const lat = parseFloat(document.getElementById('set-lat').value);
+  const lon = parseFloat(document.getElementById('set-lon').value);
+  const data = { ...state.settings, gatewayIp: ip, latitude: lat, longitude: lon };
+  try {
+    const updated = await API.put('/api/settings', data);
+    state.settings = updated;
+    renderSettings();
+    toast('Settings saved');
+  } catch(e) { toast('Failed to save settings', 'error'); }
+}
+
+async function deleteRoom(id) {
+  const r = state.rooms.find(r => r.id === id);
+  confirm_(`Delete room "${r?.name}"? This removes all its lights.`, async () => {
+    await API.del(`/api/rooms/${id}`);
+    state.rooms = state.rooms.filter(r => r.id !== id);
+    if (state.activeRoomId === id) state.activeRoomId = state.rooms[0]?.id || null;
+    renderRooms(); renderSettings();
+    toast('Room deleted');
+  });
+}
+
+async function deleteDevice(id) {
+  const d = state.devices.find(d => d.id === id);
+  confirm_(`Delete device "${d?.name}"?`, async () => {
+    await API.del(`/api/devices/${id}`);
+    state.devices = state.devices.filter(d => d.id !== id);
+    renderSettings();
+    toast('Device deleted');
+  });
+}
+
+async function deleteLight(roomId, lightId) {
+  const room = state.rooms.find(r => r.id === roomId);
+  if (!room) return;
+  const light = (room.lights||[]).find(l => l.id === lightId);
+  confirm_(`Delete light "${light?.name}"?`, async () => {
+    room.lights = (room.lights||[]).filter(l => l.id !== lightId);
+    await API.put(`/api/rooms/${roomId}`, room);
+    renderRooms(); renderSettings();
+    toast('Light deleted');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MODALS — shared
+// ═══════════════════════════════════════════════════════════════════════════
+const ROOM_ICONS   = ['🛋️','🛏️','🍳','🚿','🏢','💡','🎬','🎮','🌿','🍽️','🚪','🔆'];
+const SCENE_ICONS  = ['✨','🎬','🌙','☀️','🕯️','🎉','📚','🍿','🌿','💤','🎵','🏠'];
+const ROOM_COLORS  = ['#7c3aed','#2563eb','#059669','#d97706','#dc2626','#db2777','#0891b2','#65a30d'];
+
+let _roomEditId   = null;
+let _deviceEditId = null;
+let _lightEditId  = null;
+let _lightRoomId  = null;
+let _sceneEditId  = null;
+let _schedEditId  = null;
+let _roomIconSel  = ROOM_ICONS[0];
+let _roomColorSel = ROOM_COLORS[0];
+let _sceneIconSel = SCENE_ICONS[0];
+let _sceneActions = [];
+let _schedDays    = [0,1,2,3,4,5,6];
+let _schedTrigger = 'time';
+let _schedAction  = 'scene';
+let _pickerRoomId = null;
+let _pickerLight  = null;
+let _pickerLevel  = 100;
+
+function openModal(id) {
+  const el = document.getElementById(id);
+  el.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+// Close on backdrop click
+document.querySelectorAll('.modal-backdrop').forEach(bd => {
+  bd.addEventListener('click', e => { if (e.target === bd) closeModal(bd.id); });
+});
+
+function buildEmojiGrid(gridId, options, selected, onSelect) {
+  const grid = document.getElementById(gridId);
+  grid.innerHTML = options.map(e => `
+    <button class="emoji-option ${e === selected ? 'selected' : ''}" onclick="(${onSelect.toString()})('${e}')">${e}</button>
+  `).join('');
+}
+
+function buildColorGrid(gridId, colors, selected, onSelect) {
+  const grid = document.getElementById(gridId);
+  grid.innerHTML = colors.map(c => `
+    <div class="color-swatch ${c === selected ? 'selected' : ''}"
+      style="background:${c}"
+      onclick="(${onSelect.toString()})('${c}')"></div>
+  `).join('');
+}
+
+// ─── Room modal ──────────────────────────────────────────────────────────
+function openRoomModal(id) {
+  _roomEditId = id || null;
+  const room = id ? state.rooms.find(r => r.id === id) : null;
+  document.getElementById('modal-room-title').textContent = id ? 'Edit Room' : 'Add Room';
+  document.getElementById('room-name').value = room?.name || '';
+  _roomIconSel  = room?.icon  || ROOM_ICONS[0];
+  _roomColorSel = room?.color || ROOM_COLORS[0];
+  buildEmojiGrid('room-icon-grid',  ROOM_ICONS,  _roomIconSel,  selectRoomIcon);
+  buildColorGrid('room-color-grid', ROOM_COLORS, _roomColorSel, selectRoomColor);
+  openModal('modal-room');
+}
+
+function selectRoomIcon(icon) {
+  _roomIconSel = icon;
+  buildEmojiGrid('room-icon-grid', ROOM_ICONS, icon, selectRoomIcon);
+}
+function selectRoomColor(color) {
+  _roomColorSel = color;
+  buildColorGrid('room-color-grid', ROOM_COLORS, color, selectRoomColor);
+}
+
+async function saveRoom() {
+  const name = document.getElementById('room-name').value.trim();
+  if (!name) { toast('Please enter a room name', 'error'); return; }
+  const data = { name, icon: _roomIconSel, color: _roomColorSel };
+  try {
+    if (_roomEditId) {
+      const existing = state.rooms.find(r => r.id === _roomEditId);
+      const updated = await API.put(`/api/rooms/${_roomEditId}`, { ...existing, ...data });
+      const idx = state.rooms.findIndex(r => r.id === _roomEditId);
+      state.rooms[idx] = updated;
+    } else {
+      const created = await API.post('/api/rooms', data);
+      state.rooms.push(created);
+      state.activeRoomId = created.id;
+    }
+    closeModal('modal-room');
+    renderRooms(); renderSettings();
+    toast(_roomEditId ? 'Room updated' : 'Room added');
+  } catch(e) { toast('Failed to save room', 'error'); }
+}
+
+// ─── Device modal ────────────────────────────────────────────────────────
+function openDeviceModal(id) {
+  _deviceEditId = id || null;
+  const dev = id ? state.devices.find(d => d.id === id) : null;
+  document.getElementById('modal-device-title').textContent = id ? 'Edit Device' : 'Add Device';
+  document.getElementById('device-name').value   = dev?.name   || '';
+  document.getElementById('device-subnet').value = dev?.subnet || 1;
+  document.getElementById('device-num').value    = dev?.device || 1;
+  openModal('modal-device');
+}
+
+async function saveDevice() {
+  const name   = document.getElementById('device-name').value.trim();
+  const subnet = parseInt(document.getElementById('device-subnet').value);
+  const device = parseInt(document.getElementById('device-num').value);
+  if (!name) { toast('Please enter a device name', 'error'); return; }
+  const data = { name, subnet, device };
+  try {
+    if (_deviceEditId) {
+      const updated = await API.put(`/api/devices/${_deviceEditId}`, { ...data, id: _deviceEditId });
+      const idx = state.devices.findIndex(d => d.id === _deviceEditId);
+      state.devices[idx] = updated;
+    } else {
+      const created = await API.post('/api/devices', data);
+      state.devices.push(created);
+    }
+    closeModal('modal-device');
+    renderSettings();
+    toast(_deviceEditId ? 'Device updated' : 'Device added');
+  } catch(e) { toast('Failed to save device', 'error'); }
+}
+
+// ─── Light modal ─────────────────────────────────────────────────────────
+const DEVICE_ICONS = [
+  '💡','🔆','🕯️','🔦','🏮',
+  '❄️','🌡️','🔥','♨️','💨',
+  '🚿','💧','🛁','🚰','🌊',
+  '📺','🎛️','🔌','⚡','🖥️',
+  '🎵','🚪','🔐','🌿','🏊',
+  '🍳','🧺','🖨️','📡','🎚️',
+];
+
+function buildIconPicker(selectedIcon) {
+  const picker = document.getElementById('light-icon-picker');
+  picker.innerHTML = DEVICE_ICONS.map(icon =>
+    `<button type="button" class="icon-opt${icon === selectedIcon ? ' selected' : ''}" onclick="selectDeviceIcon('${icon}')">${icon}</button>`
+  ).join('');
+}
+
+function selectDeviceIcon(icon) {
+  document.querySelectorAll('#light-icon-picker .icon-opt').forEach(b => {
+    b.classList.toggle('selected', b.textContent === icon);
+  });
+}
+
+function getSelectedIcon() {
+  const sel = document.querySelector('#light-icon-picker .icon-opt.selected');
+  return sel ? sel.textContent : '💡';
+}
+
+function openLightModal(lightId, roomId) {
+  _lightEditId = lightId || null;
+  _lightRoomId = roomId || null;
+  const room  = roomId  ? state.rooms.find(r => r.id === roomId)  : null;
+  const light = lightId ? (room?.lights||[]).find(l => l.id === lightId) : null;
+
+  document.getElementById('modal-light-title').textContent = lightId ? 'Edit Device' : 'Add Device';
+  document.getElementById('light-name').value    = light?.name    || '';
+  document.getElementById('light-channel').value = light?.channel || 1;
+  document.getElementById('light-type').value    = light?.type    || 'relay';
+  buildIconPicker(light?.icon || '💡');
+
+  // Populate room selector
+  const roomSel = document.getElementById('light-room');
+  roomSel.innerHTML = state.rooms.map(r => `<option value="${r.id}" ${r.id === roomId ? 'selected' : ''}>${r.icon} ${esc(r.name)}</option>`).join('');
+
+  // Populate device selector
+  const devSel = document.getElementById('light-device-sel');
+  devSel.innerHTML = '<option value="">— Manual entry —</option>' +
+    state.devices.map(d => `<option value="${d.id}">${esc(d.name)} (${d.subnet}.${d.device})</option>`).join('');
+
+  document.getElementById('light-subnet').value  = light?.subnet || 1;
+  document.getElementById('light-dev-num').value = light?.device || 1;
+  document.getElementById('light-manual-row').style.display = 'grid';
+  devSel.value = '';
+
+  openModal('modal-light');
+}
+
+function onLightDeviceSel() {
+  const devId = document.getElementById('light-device-sel').value;
+  const dev = state.devices.find(d => d.id === devId);
+  if (dev) {
+    document.getElementById('light-subnet').value  = dev.subnet;
+    document.getElementById('light-dev-num').value = dev.device;
+    document.getElementById('light-manual-row').style.display = 'none';
+  } else {
+    document.getElementById('light-manual-row').style.display = 'grid';
+  }
+}
+
+function nanoid6() {
+  return Math.random().toString(36).slice(2, 8);
+}
+
+async function saveLight() {
+  const name    = document.getElementById('light-name').value.trim();
+  const roomId  = document.getElementById('light-room').value;
+  const channel = parseInt(document.getElementById('light-channel').value);
+  const type    = document.getElementById('light-type').value;
+  let subnet, device;
+  const devId = document.getElementById('light-device-sel').value;
+  const dev = state.devices.find(d => d.id === devId);
+  if (dev) { subnet = dev.subnet; device = dev.device; }
+  else {
+    subnet = parseInt(document.getElementById('light-subnet').value);
+    device = parseInt(document.getElementById('light-dev-num').value);
+  }
+  if (!name) { toast('Please enter a device name', 'error'); return; }
+
+  const room = state.rooms.find(r => r.id === roomId);
+  if (!room) { toast('Please select a room', 'error'); return; }
+
+  const icon = getSelectedIcon();
+  const lightObj = { id: _lightEditId || nanoid6(), name, icon, subnet, device, channel, type };
+
+  if (_lightEditId) {
+    room.lights = (room.lights||[]).map(l => l.id === _lightEditId ? lightObj : l);
+  } else {
+    room.lights = [...(room.lights||[]), lightObj];
+  }
+
+  try {
+    const updated = await API.put(`/api/rooms/${roomId}`, room);
+    const idx = state.rooms.findIndex(r => r.id === roomId);
+    state.rooms[idx] = updated;
+    closeModal('modal-light');
+    renderRooms(); renderSettings();
+    toast(_lightEditId ? 'Device updated' : 'Device added');
+  } catch(e) { toast('Failed to save device', 'error'); }
+}
+
+// ─── Scene modal ─────────────────────────────────────────────────────────
+function openSceneModal(id) {
+  _sceneEditId  = id || null;
+  const scene = id ? state.scenes.find(s => s.id === id) : null;
+  document.getElementById('modal-scene-title').textContent = id ? 'Edit Scene' : 'New Scene';
+  document.getElementById('scene-name').value = scene?.name || '';
+  _sceneIconSel = scene?.icon || SCENE_ICONS[0];
+  _sceneActions = [...(scene?.actions || [])];
+  buildEmojiGrid('scene-icon-grid', SCENE_ICONS, _sceneIconSel, selectSceneIcon);
+  renderSceneActions();
+  closePicker();
+  openModal('modal-scene');
+}
+
+function selectSceneIcon(icon) {
+  _sceneIconSel = icon;
+  buildEmojiGrid('scene-icon-grid', SCENE_ICONS, icon, selectSceneIcon);
+}
+
+function renderSceneActions() {
+  const list = document.getElementById('scene-actions-list');
+  if (!_sceneActions.length) { list.innerHTML = '<div style="color:var(--text-3);font-size:13px">No actions yet.</div>'; return; }
+  list.innerHTML = _sceneActions.map((a,i) => {
+    const room  = state.rooms.find(r => (r.lights||[]).some(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel));
+    const light = (room?.lights||[]).find(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel);
+    const label = light ? `${room.icon} ${esc(room.name)} → ${esc(light.name)}` : `${a.subnet}.${a.device} ch${a.channel}`;
+    return `
+      <div class="action-item">
+        <div class="action-item-text">${label}</div>
+        <span class="action-level ${a.level > 0 ? 'on' : 'off'}">${a.level > 0 ? 'ON' : 'OFF'}</span>
+        <button class="btn btn-icon btn-danger btn-sm" onclick="removeAction(${i})">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function removeAction(i) {
+  _sceneActions.splice(i, 1);
+  renderSceneActions();
+}
+
+// Light picker
+function openLightPicker() {
+  const picker = document.getElementById('light-picker');
+  picker.style.display = 'block';
+  _pickerRoomId = null; _pickerLight = null; _pickerLevel = 100;
+  showPickerStep('room');
+  const rooms = document.getElementById('picker-rooms');
+  rooms.innerHTML = state.rooms.map(r => `
+    <div class="picker-option" onclick="pickerSelectRoom('${r.id}')">${r.icon||'💡'} ${esc(r.name)}</div>
+  `).join('');
+}
+function closePicker() {
+  document.getElementById('light-picker').style.display = 'none';
+}
+function showPickerStep(step) {
+  document.querySelectorAll('.sub-picker-step').forEach(s => s.classList.remove('active'));
+  document.getElementById(`picker-step-${step}`).classList.add('active');
+}
+function pickerSelectRoom(roomId) {
+  _pickerRoomId = roomId;
+  const room = state.rooms.find(r => r.id === roomId);
+  const lights = document.getElementById('picker-lights');
+  lights.innerHTML = (room?.lights||[]).map(l => `
+    <div class="picker-option" onclick="pickerSelectLight(${l.subnet},${l.device},${l.channel},'${esc(l.name)}')">${esc(l.name)}</div>
+  `).join('') || '<div style="color:var(--text-3);padding:10px">No lights in this room.</div>';
+  showPickerStep('light');
+}
+function pickerBack(to) {
+  showPickerStep(to);
+}
+function pickerSelectLight(subnet, device, channel, name) {
+  _pickerLight = { subnet, device, channel, name };
+  _pickerLevel = 100;
+  updateLevelBtns();
+  showPickerStep('level');
+}
+function setPickerLevel(lvl) {
+  _pickerLevel = lvl;
+  updateLevelBtns();
+}
+function updateLevelBtns() {
+  document.getElementById('level-on').classList.toggle('active',  _pickerLevel === 100);
+  document.getElementById('level-off').classList.toggle('active', _pickerLevel === 0);
+}
+function addPickerAction() {
+  if (!_pickerLight) return;
+  _sceneActions.push({ subnet: _pickerLight.subnet, device: _pickerLight.device, channel: _pickerLight.channel, level: _pickerLevel });
+  renderSceneActions();
+  closePicker();
+}
+
+async function saveScene() {
+  const name = document.getElementById('scene-name').value.trim();
+  if (!name) { toast('Please enter a scene name', 'error'); return; }
+  const data = { name, icon: _sceneIconSel, actions: _sceneActions };
+  try {
+    if (_sceneEditId) {
+      const updated = await API.put(`/api/scenes/${_sceneEditId}`, { ...data, id: _sceneEditId });
+      const idx = state.scenes.findIndex(s => s.id === _sceneEditId);
+      state.scenes[idx] = updated;
+    } else {
+      const created = await API.post('/api/scenes', data);
+      state.scenes.push(created);
+    }
+    closeModal('modal-scene');
+    renderScenes(); renderSettings();
+    toast(_sceneEditId ? 'Scene updated' : 'Scene created');
+  } catch(e) { toast('Failed to save scene', 'error'); }
+}
+
+// ─── Schedule modal ──────────────────────────────────────────────────────
+function openScheduleModal(id) {
+  _schedEditId = id || null;
+  const s = id ? state.schedules.find(s => s.id === id) : null;
+  document.getElementById('modal-sched-title').textContent = id ? 'Edit Schedule' : 'New Schedule';
+  document.getElementById('sched-name').value   = s?.name   || '';
+  document.getElementById('sched-time').value   = s?.time   || '07:00';
+  document.getElementById('sched-offset').value = s?.offset || 0;
+
+  _schedDays    = s?.days    ? [...s.days]    : [0,1,2,3,4,5,6];
+  _schedTrigger = s?.triggerType || 'time';
+  _schedAction  = s?.actionType  || 'scene';
+
+  setTriggerType(_schedTrigger, true);
+  setActionType(_schedAction, true);
+  renderDayBtns();
+
+  // Scene selector
+  const sel = document.getElementById('sched-scene');
+  sel.innerHTML = state.scenes.map(sc => `<option value="${sc.id}" ${sc.id === s?.sceneId ? 'selected' : ''}>${sc.icon||'✨'} ${esc(sc.name)}</option>`).join('') || '<option value="">No scenes</option>';
+
+  openModal('modal-schedule');
+}
+
+function setTriggerType(type, silent) {
+  _schedTrigger = type;
+  document.querySelectorAll('[data-trigger]').forEach(b => b.classList.toggle('active', b.dataset.trigger === type));
+  document.getElementById('trigger-time-row').style.display   = type === 'time' ? '' : 'none';
+  document.getElementById('trigger-offset-row').style.display = type !== 'time' ? '' : 'none';
+}
+
+function setActionType(type, silent) {
+  _schedAction = type;
+  document.querySelectorAll('[data-action]').forEach(b => b.classList.toggle('active', b.dataset.action === type));
+  document.getElementById('action-scene-row').style.display = type === 'scene' ? '' : 'none';
+}
+
+function renderDayBtns() {
+  const row = document.getElementById('sched-days-row');
+  row.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i) => `
+    <button class="day-btn ${_schedDays.includes(i) ? 'active' : ''}" onclick="toggleDay(${i})">${d.charAt(0)}</button>
+  `).join('');
+}
+
+function toggleDay(i) {
+  if (_schedDays.includes(i)) _schedDays = _schedDays.filter(d => d !== i);
+  else _schedDays = [..._schedDays, i].sort();
+  renderDayBtns();
+}
+
+function setDays(preset) {
+  if (preset === 'all')      _schedDays = [0,1,2,3,4,5,6];
+  else if (preset === 'weekdays') _schedDays = [1,2,3,4,5];
+  else if (preset === 'weekends') _schedDays = [0,6];
+  renderDayBtns();
+}
+
+async function saveSchedule() {
+  const name = document.getElementById('sched-name').value.trim();
+  if (!name) { toast('Please enter a schedule name', 'error'); return; }
+  const data = {
+    name,
+    enabled: true,
+    triggerType: _schedTrigger,
+    time:    document.getElementById('sched-time').value,
+    offset:  parseInt(document.getElementById('sched-offset').value) || 0,
+    days:    _schedDays,
+    actionType: _schedAction,
+    sceneId: document.getElementById('sched-scene').value || null,
+  };
+  try {
+    if (_schedEditId) {
+      const updated = await API.put(`/api/schedules/${_schedEditId}`, { ...data, id: _schedEditId });
+      const idx = state.schedules.findIndex(s => s.id === _schedEditId);
+      state.schedules[idx] = updated;
+    } else {
+      const created = await API.post('/api/schedules', data);
+      state.schedules.push(created);
+    }
+    closeModal('modal-schedule');
+    renderSchedules();
+    toast(_schedEditId ? 'Schedule updated' : 'Schedule created');
+  } catch(e) { toast('Failed to save schedule', 'error'); }
+}
+
+// ─── Confirm modal ───────────────────────────────────────────────────────
+let _confirmCb = null;
+function confirm_(msg, cb) {
+  _confirmCb = cb;
+  document.getElementById('confirm-body').textContent = msg;
+  const btn = document.getElementById('confirm-ok-btn');
+  btn.onclick = async () => { closeModal('modal-confirm'); if (_confirmCb) await _confirmCb(); _confirmCb = null; };
+  openModal('modal-confirm');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Toast
+// ═══════════════════════════════════════════════════════════════════════════
+function toast(msg, type) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast${type ? ' ' + type : ''}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => {
+    t.style.animation = 'toast-out 0.3s ease forwards';
+    setTimeout(() => t.remove(), 300);
+  }, 2800);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Utility
+// ═══════════════════════════════════════════════════════════════════════════
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Boot
+// ═══════════════════════════════════════════════════════════════════════════
+loadAll();
+</script>
+</body>
+</html>
