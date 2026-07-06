@@ -111,6 +111,60 @@ function logActivity(type, description, details) {
     scheduleActivitySave();
 }
 
+// ─── Authentication — PIN + long-lived device tokens ─────────────────────────
+// data/auth.json: { pinHash, salt, tokens: { <token>: { label, created, lastSeen } } }
+// Devices enroll once with the PIN and get a token that lives until revoked.
+const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
+let auth = { pinHash: null, salt: null, tokens: {} };
+
+function loadAuth() {
+    try {
+        if (fs.existsSync(AUTH_FILE)) auth = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+    } catch { auth = { pinHash: null, salt: null, tokens: {} }; }
+    if (!auth.tokens) auth.tokens = {};
+}
+
+function saveAuth() {
+    try { fs.writeFileSync(AUTH_FILE, JSON.stringify(auth)); } catch {}
+}
+
+function hashPin(pin, salt) {
+    return crypto.scryptSync(String(pin), Buffer.from(salt, 'hex'), 32).toString('hex');
+}
+
+function verifyPin(pin) {
+    if (!auth.pinHash || !auth.salt) return false;
+    const h = Buffer.from(hashPin(pin, auth.salt), 'hex');
+    const stored = Buffer.from(auth.pinHash, 'hex');
+    return h.length === stored.length && crypto.timingSafeEqual(h, stored);
+}
+
+function issueToken(label) {
+    const token = crypto.randomBytes(32).toString('hex');
+    auth.tokens[token] = { label: String(label || 'Unknown device').slice(0, 60), created: Date.now(), lastSeen: Date.now() };
+    saveAuth();
+    return token;
+}
+
+// lastSeen updates are debounced to at most one disk write per minute
+let authSaveTimer = null;
+function touchToken(token) {
+    const t = auth.tokens[token];
+    if (!t) return;
+    t.lastSeen = Date.now();
+    if (!authSaveTimer)
+        authSaveTimer = setTimeout(() => { authSaveTimer = null; saveAuth(); }, 60000);
+}
+
+function getReqToken(req, urlObj) {
+    const h = req.headers['authorization'];
+    if (h && h.startsWith('Bearer ')) return h.slice(7);
+    return urlObj.searchParams.get('token'); // EventSource can't set headers
+}
+
+// Brute-force lockout: quadratic backoff after failed PIN attempts
+let pinFails = { count: 0, lockedUntil: 0 };
+
 // ─── Ad-hoc countdown timers ─────────────────────────────────────────────────
 // Key: "subnet.device.channel"  Value: { expiresAt: ms epoch, minutes }
 // Persisted so a server restart doesn't leave a light on past its timer.
@@ -697,6 +751,68 @@ const server = http.createServer(async (req, res) => {
     // ── API routes ────────────────────────────────────────────────────────────
     if (p.startsWith('/api/')) {
 
+        // ── AUTH: open endpoints (no token required) ──────────────────────────
+        if (method === 'GET' && p === '/api/auth/status') {
+            return reply(res, 200, { setup: !!auth.pinHash });
+        }
+        if (method === 'POST' && (p === '/api/auth/setup' || p === '/api/auth/login')) {
+            const body = await parseBody(req);
+            const pin = String(body.pin || '');
+            const label = body.device;
+            if (p === '/api/auth/setup') {
+                if (auth.pinHash) return reply(res, 403, { error: 'Already set up — use login' });
+                if (pin.length < 4) return reply(res, 400, { error: 'PIN must be at least 4 characters' });
+                auth.salt = crypto.randomBytes(16).toString('hex');
+                auth.pinHash = hashPin(pin, auth.salt);
+                const token = issueToken(label);
+                logActivity('auth', `Security enabled — device enrolled: ${auth.tokens[token].label}`, { label });
+                console.log('[Auth] PIN configured, first device enrolled');
+                return reply(res, 200, { ok: true, token });
+            }
+            // login
+            const now = Date.now();
+            if (now < pinFails.lockedUntil)
+                return reply(res, 429, { error: `Too many attempts — wait ${Math.ceil((pinFails.lockedUntil - now) / 1000)}s` });
+            if (!verifyPin(pin)) {
+                pinFails.count++;
+                pinFails.lockedUntil = now + Math.min(pinFails.count * pinFails.count, 60) * 1000;
+                logActivity('auth', `Failed login attempt`, { label });
+                return reply(res, 401, { error: 'Wrong PIN' });
+            }
+            pinFails = { count: 0, lockedUntil: 0 };
+            const token = issueToken(label);
+            logActivity('auth', `Device enrolled: ${auth.tokens[token].label}`, { label });
+            return reply(res, 200, { ok: true, token });
+        }
+
+        // ── AUTH GATE: everything below requires a valid device token ─────────
+        let reqToken = null;
+        if (!(method === 'GET' && p === '/api/health')) {
+            reqToken = getReqToken(req, urlObj);
+            if (!auth.pinHash || !reqToken || !auth.tokens[reqToken])
+                return reply(res, 401, { error: 'Unauthorized' });
+            touchToken(reqToken);
+        }
+
+        // ── AUTH: device management (authenticated) ───────────────────────────
+        if (method === 'GET' && p === '/api/auth/devices') {
+            const list = Object.entries(auth.tokens).map(([tok, t]) => ({
+                id: tok.slice(0, 8), label: t.label, created: t.created,
+                lastSeen: t.lastSeen, current: tok === reqToken,
+            })).sort((a, b) => b.lastSeen - a.lastSeen);
+            return reply(res, 200, list);
+        }
+        const authDevMatch = p.match(/^\/api\/auth\/devices\/([^/]+)$/);
+        if (authDevMatch && method === 'DELETE') {
+            const tok = Object.keys(auth.tokens).find(t => t.slice(0, 8) === authDevMatch[1]);
+            if (!tok) return reply(res, 404, { error: 'Not found' });
+            const label = auth.tokens[tok].label;
+            delete auth.tokens[tok];
+            saveAuth();
+            logActivity('auth', `Device revoked: ${label}`, { label });
+            return reply(res, 200, { ok: true, wasCurrent: tok === reqToken });
+        }
+
         // GET /api/events — SSE stream for real-time state updates
         if (method === 'GET' && p === '/api/events') {
             res.writeHead(200, {
@@ -1067,6 +1183,7 @@ const server = http.createServer(async (req, res) => {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadDb();
 loadActivity();
+loadAuth();
 loadTimers();
 initLightState();
 startUdpListener();

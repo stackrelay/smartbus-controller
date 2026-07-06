@@ -390,6 +390,35 @@ a { color: inherit; text-decoration: none; }
 }
 .timer-preset:hover { background: var(--accent-glow); border-color: var(--accent); }
 
+/* ── Auth overlay ───────────────────────────────────────────────────────── */
+#auth-overlay {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  z-index: 5000;
+  display: none;
+  align-items: center; justify-content: center;
+  padding: 24px;
+}
+#auth-overlay.show { display: flex; }
+.auth-box { width: 100%; max-width: 340px; text-align: center; }
+.auth-box .logo-icon { width: 56px; height: 56px; font-size: 26px; margin: 0 auto 16px; }
+.auth-title { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; }
+.auth-sub { font-size: 13px; color: var(--text-2); margin: 6px 0 24px; }
+.auth-pin {
+  width: 100%;
+  text-align: center;
+  font-size: 20px; letter-spacing: 6px;
+  padding: 14px;
+  margin-bottom: 10px;
+  background: var(--card);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.auth-pin:focus { outline: none; border-color: var(--accent); }
+.auth-error { color: var(--red); font-size: 13px; min-height: 20px; margin-bottom: 8px; }
+.auth-btn { width: 100%; justify-content: center; padding: 13px; font-size: 15px; }
+
 /* ── Floor / Room hierarchy in Settings ─────────────────────────────────── */
 .floor-group { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .floor-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(124,58,237,0.12); font-weight: 600; font-size: 13px; color: var(--accent-light, #a78bfa); }
@@ -1155,17 +1184,113 @@ select.form-input { cursor: pointer; }
   </div>
 </div>
 
+<div id="auth-overlay">
+  <div class="auth-box">
+    <div class="logo-icon">💡</div>
+    <div class="auth-title">Smart-Bus G4</div>
+    <div class="auth-sub" id="auth-sub">Enter your PIN to unlock</div>
+    <form id="auth-form" onsubmit="event.preventDefault(); authSubmit();">
+      <input type="text" name="username" value="SmartBus" autocomplete="username" style="display:none" tabindex="-1" aria-hidden="true">
+      <input id="auth-pin" type="password" class="auth-pin" autocomplete="current-password" placeholder="PIN">
+      <input id="auth-pin2" type="password" class="auth-pin" autocomplete="new-password" placeholder="Confirm PIN" style="display:none">
+      <div class="auth-error" id="auth-error"></div>
+      <button type="submit" class="btn btn-primary auth-btn" id="auth-submit">Unlock</button>
+    </form>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
+//  Auth — PIN once per device, then a long-lived token in localStorage
+// ═══════════════════════════════════════════════════════════════════════════
+// localStorage throws in storage-less contexts (data: URLs, some private modes) —
+// fall back to in-memory tokens there (login required each visit, but no crash)
+const store = {
+  get(k)    { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k)    { try { localStorage.removeItem(k); } catch {} },
+};
+let AUTH_TOKEN = store.get('sb_token');
+let _authMode = 'login';
+
+function authHeaders() {
+  return AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {};
+}
+
+function deviceLabel() {
+  const ua = navigator.userAgent;
+  let dev = 'Browser';
+  if (/iPhone/.test(ua)) dev = 'iPhone';
+  else if (/iPad/.test(ua)) dev = 'iPad';
+  else if (/Android/.test(ua)) dev = 'Android';
+  else if (/Macintosh/.test(ua)) dev = 'Mac';
+  else if (/Windows/.test(ua)) dev = 'Windows PC';
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  return dev + (standalone ? ' · app' : ' · browser');
+}
+
+function showAuth(mode) {
+  _authMode = mode;
+  document.getElementById('auth-sub').textContent = mode === 'setup'
+    ? 'First-time setup — create a PIN to protect your home'
+    : 'Enter your PIN to unlock';
+  document.getElementById('auth-pin2').style.display = mode === 'setup' ? '' : 'none';
+  document.getElementById('auth-submit').textContent = mode === 'setup' ? 'Create PIN' : 'Unlock';
+  document.getElementById('auth-error').textContent = '';
+  document.getElementById('auth-overlay').classList.add('show');
+  setTimeout(() => document.getElementById('auth-pin').focus(), 150);
+}
+
+function hideAuth() {
+  document.getElementById('auth-overlay').classList.remove('show');
+}
+
+async function authSubmit() {
+  const pin = document.getElementById('auth-pin').value;
+  const err = document.getElementById('auth-error');
+  if (_authMode === 'setup') {
+    if (pin.length < 4) { err.textContent = 'PIN must be at least 4 characters'; return; }
+    if (pin !== document.getElementById('auth-pin2').value) { err.textContent = "PINs don't match"; return; }
+  }
+  try {
+    const r = await fetch(_authMode === 'setup' ? '/api/auth/setup' : '/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin, device: deviceLabel() }),
+    });
+    const data = await r.json();
+    if (!r.ok) { err.textContent = data.error || 'Login failed'; return; }
+    AUTH_TOKEN = data.token;
+    store.set('sb_token', AUTH_TOKEN);
+    document.getElementById('auth-pin').value = '';
+    document.getElementById('auth-pin2').value = '';
+    hideAuth();
+    startApp();
+  } catch(e) { err.textContent = 'Cannot reach server'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  API
 // ═══════════════════════════════════════════════════════════════════════════
+function clearAuthToken() {
+  AUTH_TOKEN = null;
+  store.del('sb_token');
+  if (sseConnection) { sseConnection.close(); sseConnection = null; }
+}
+
+function apiFetch(url, opts = {}) {
+  opts.headers = { ...(opts.headers || {}), ...authHeaders() };
+  return fetch(url, opts).then(r => {
+    if (r.status === 401) { clearAuthToken(); showAuth('login'); throw new Error('unauthorized'); }
+    return r.json();
+  });
+}
 const API = {
-  get:  url        => fetch(url).then(r => r.json()),
-  post: (url,data) => fetch(url,{method:'POST',  headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).then(r=>r.json()),
-  put:  (url,data) => fetch(url,{method:'PUT',   headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).then(r=>r.json()),
-  del:  url        => fetch(url,{method:'DELETE'}).then(r=>r.json()),
+  get:  url        => apiFetch(url),
+  post: (url,data) => apiFetch(url,{method:'POST',  headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}),
+  put:  (url,data) => apiFetch(url,{method:'PUT',   headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}),
+  del:  url        => apiFetch(url,{method:'DELETE'}),
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1182,7 +1307,8 @@ const state = {
 // ═══════════════════════════════════════════════════════════════════════════
 async function safeGet(url, fallback) {
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { headers: authHeaders() });
+    if (r.status === 401) { clearAuthToken(); showAuth('login'); return fallback; }
     if (!r.ok) return fallback;
     return await r.json();
   } catch { return fallback; }
@@ -1222,7 +1348,8 @@ let sseConnection = null;
 
 function connectSSE() {
   if (sseConnection) sseConnection.close();
-  sseConnection = new EventSource('/api/events');
+  if (!AUTH_TOKEN) return; // no point connecting unauthenticated
+  sseConnection = new EventSource('/api/events?token=' + encodeURIComponent(AUTH_TOKEN));
 
   sseConnection.onmessage = (e) => {
     try {
@@ -1260,7 +1387,8 @@ function connectSSE() {
   };
 
   sseConnection.onerror = () => {
-    // Fallback to polling if SSE fails
+    // Fallback to polling if SSE fails; stop retrying if we lost auth
+    if (!AUTH_TOKEN) return;
     setTimeout(connectSSE, 5000);
   };
 }
@@ -1787,14 +1915,24 @@ function renderSettings() {
     </div>
   `;
 
+  // ── Security & Devices ────────────────────────────────────────────────────
+  const securityHtml = `
+    <div id="devices-list" style="display:flex;flex-direction:column;gap:8px">
+      <div style="color:var(--text-3);font-size:13px">Loading…</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="logoutDevice()">Log out this device</button>
+  `;
+
   // Preserve which accordions were open before re-render
   const openIds = new Set([...wrap.querySelectorAll('.accordion.open')].map(el => el.id));
 
   wrap.innerHTML = `
     ${accordion('acc-structure', '🏢', 'Floors & Rooms', structureHtml)}
     ${accordion('acc-modules',   '📡', 'S-BUS Modules',  modulesHtml)}
+    ${accordion('acc-security',  '🔐', 'Security & Devices', securityHtml)}
     ${accordion('acc-system',    '⚙️', 'System',         systemHtml)}
   `;
+  loadDevices();
 
   // Re-attach toggles and restore open state (auto-open Floors & Rooms on first load)
   wrap.querySelectorAll('.accordion').forEach(acc => {
@@ -1802,6 +1940,55 @@ function renderSettings() {
     const firstLoad = openIds.size === 0;
     if (wasOpen || (firstLoad && acc.id === 'acc-structure')) acc.classList.add('open');
     acc.querySelector('.accordion-header').addEventListener('click', () => acc.classList.toggle('open'));
+  });
+}
+
+// ── Security & Devices (auth) ────────────────────────────────────────────────
+function agoText(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 120000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+  return `${Math.floor(diff/86400000)}d ago`;
+}
+
+async function loadDevices() {
+  const el = document.getElementById('devices-list');
+  if (!el) return;
+  const list = await safeGet('/api/auth/devices', []);
+  if (!Array.isArray(list) || !list.length) {
+    el.innerHTML = '<div style="color:var(--text-3);font-size:13px">No enrolled devices</div>';
+    return;
+  }
+  el.innerHTML = list.map(d => `
+    <div class="list-item">
+      <div class="list-item-icon">${d.current ? '✅' : '📱'}</div>
+      <div class="list-item-info">
+        <div class="list-item-name">${esc(d.label)}${d.current ? ' <span style="color:var(--green);font-size:11px;font-weight:600">this device</span>' : ''}</div>
+        <div class="list-item-meta">Active ${agoText(d.lastSeen)} · Enrolled ${new Date(d.created).toLocaleDateString()}</div>
+      </div>
+      <div class="list-item-actions">
+        ${d.current ? '' : `<button class="btn btn-icon btn-danger btn-sm" onclick="revokeDevice('${d.id}')" title="Revoke access">🗑️</button>`}
+      </div>
+    </div>`).join('');
+}
+
+function revokeDevice(id) {
+  confirm_("Revoke this device's access? It will need the PIN to sign back in.", async () => {
+    await API.del(`/api/auth/devices/${id}`);
+    toast('Device revoked');
+    loadDevices();
+  });
+}
+
+function logoutDevice() {
+  confirm_('Log out this device? You will need the PIN to unlock again.', async () => {
+    try {
+      const me = (await safeGet('/api/auth/devices', [])).find(d => d.current);
+      if (me) await API.del(`/api/auth/devices/${me.id}`);
+    } catch(e) {}
+    clearAuthToken();
+    location.reload();
   });
 }
 
@@ -2611,6 +2798,7 @@ async function renderActivity() {
     schedule:   { color: 'var(--green)',   icon: '⏰' },
     mode:       { color: 'var(--text-2)',  icon: '🏠' },
     timer:      { color: 'var(--amber)',   icon: '⏱' },
+    auth:       { color: 'var(--accent)',  icon: '🔐' },
     failure:    { color: 'var(--red)',     icon: '⚠️' },
     wall_panel: { color: 'var(--accent)',  icon: '🔘' },
   };
@@ -2665,19 +2853,35 @@ async function refreshState() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  Boot
 // ═══════════════════════════════════════════════════════════════════════════
-loadAll().then(() => {
-  connectSSE();
-  setTimeout(async () => {
-    try { await API.post('/api/refresh', {}); } catch(e) {}
-  }, 1500);
-}).catch(e => {
-  // Show load failure visibly
-  const d = document.getElementById('debug-error') || document.createElement('div');
-  d.id = 'debug-error';
-  d.style = 'position:fixed;top:0;left:0;right:0;background:red;color:#fff;padding:8px;font-size:12px;z-index:99999';
-  d.textContent = 'LOAD FAILED: ' + e.message;
-  document.body.appendChild(d);
-});
+function startApp() {
+  loadAll().then(() => {
+    connectSSE();
+    setTimeout(async () => {
+      try { await API.post('/api/refresh', {}); } catch(e) {}
+    }, 1500);
+  }).catch(e => {
+    if (e && e.message === 'unauthorized') return; // login overlay already shown
+    // Show load failure visibly
+    const d = document.getElementById('debug-error') || document.createElement('div');
+    d.id = 'debug-error';
+    d.style = 'position:fixed;top:0;left:0;right:0;background:red;color:#fff;padding:8px;font-size:12px;z-index:99999';
+    d.textContent = 'LOAD FAILED: ' + e.message;
+    document.body.appendChild(d);
+  });
+}
+
+async function boot() {
+  const st = await safeGet('/api/auth/status', null);
+  if (st && !st.setup) { showAuth('setup'); return; }
+  if (!AUTH_TOKEN) { showAuth('login'); return; }
+  // Probe the token before booting so a revoked device gets a clean login screen
+  try {
+    const r = await fetch('/api/auth/devices', { headers: authHeaders() });
+    if (r.status === 401) { clearAuthToken(); showAuth('login'); return; }
+  } catch(e) { /* server unreachable — let startApp surface it */ }
+  startApp();
+}
+boot();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
