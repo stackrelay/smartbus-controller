@@ -4,3 +4,4 @@ nohup.out
 server.log
 *.log
 .DS_Store
+server.log.old

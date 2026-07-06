@@ -128,7 +128,7 @@ Edit the top of `server.js`:
 ```javascript
 let SMARTGATE_IP   = '192.168.1.100';  // Your SmartGate IP
 let SMARTGATE_PORT = 6000;              // Default SmartGate UDP port
-const SERVER_PORT  = 3001;              // Web UI port
+const SERVER_PORT  = 3003;              // Web UI port
 ```
 
 Or configure it later through the web UI under **Settings → System**.
@@ -141,7 +141,7 @@ Or configure it later through the web UI under **Settings → System**.
 node server.js
 ```
 
-Then open `http://YOUR_NAS_IP:3001` in any browser on the same network.
+Then open `http://YOUR_NAS_IP:3003` in any browser on the same network.
 
 ### Running permanently (Synology NAS)
 

@@ -111,6 +111,25 @@ function logActivity(type, description, details) {
     scheduleActivitySave();
 }
 
+// ─── Log rotation ─────────────────────────────────────────────────────────────
+// stdout/stderr are redirected to server.log in append mode (restart.sh uses >>),
+// so truncating the file in place is safe: O_APPEND writers continue at the new
+// end. Previous contents are kept once in server.log.old.
+const LOG_FILE     = path.join(__dirname, 'server.log');
+const LOG_MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
+function rotateLogIfNeeded() {
+    try {
+        const st = fs.statSync(LOG_FILE);
+        if (st.size < LOG_MAX_SIZE) return;
+        fs.copyFileSync(LOG_FILE, LOG_FILE + '.old');
+        fs.truncateSync(LOG_FILE, 0);
+        console.log(`[Log] Rotated server.log (was ${(st.size / 1048576).toFixed(1)} MB)`);
+    } catch { /* no log file (e.g. running in a terminal) — nothing to rotate */ }
+}
+rotateLogIfNeeded();
+setInterval(rotateLogIfNeeded, 6 * 3600 * 1000);
+
 // ─── Authentication — PIN + long-lived device tokens ─────────────────────────
 // data/auth.json: { pinHash, salt, tokens: { <token>: { label, created, lastSeen } } }
 // Devices enroll once with the PIN and get a token that lives until revoked.
