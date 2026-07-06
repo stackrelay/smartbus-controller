@@ -295,6 +295,9 @@ a { color: inherit; text-decoration: none; }
   .light-meta { display: none; }
   .light-status { display: none; }
   .light-toggle { display: none; }
+  .light-switch { display: none; } /* on-state already shown by card glow; frees space for name + timer */
+  .light-actions { display: contents; }
+  .light-timer-btn { padding: 4px 8px; font-size: 11px; flex-shrink: 0; border-radius: 6px; }
   .room-content { padding: 0 12px 16px; }
   .room-header { padding: 8px 12px; }
   .room-header-title { font-size: 14px; }
@@ -359,6 +362,33 @@ a { color: inherit; text-decoration: none; }
 }
 .light-card.on .light-toggle { background: var(--amber); border-color: var(--amber); color: #000; box-shadow: 0 0 16px rgba(245,158,11,0.4); }
 .light-toggle:hover { opacity: 0.85; }
+
+.light-actions { display: flex; gap: 8px; margin-top: 14px; }
+.light-actions .light-toggle { flex: 1; margin-top: 0; }
+.light-timer-btn {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px; font-weight: 600;
+  white-space: nowrap;
+  transition: all var(--transition);
+}
+.light-timer-btn:hover { background: var(--card-hover); color: var(--text); }
+.light-timer-btn.active { background: var(--accent-glow); border-color: var(--accent); color: var(--text); }
+
+.timer-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.timer-preset {
+  padding: 14px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-mid);
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px; font-weight: 600;
+  transition: all var(--transition);
+}
+.timer-preset:hover { background: var(--accent-glow); border-color: var(--accent); }
 
 /* ── Floor / Room hierarchy in Settings ─────────────────────────────────── */
 .floor-group { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
@@ -1092,6 +1122,28 @@ select.form-input { cursor: pointer; }
   </div>
 </div>
 
+<div id="modal-timer" class="modal-backdrop">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title"><span id="timer-title">⏱ Auto-Off Timer</span><button class="modal-close" onclick="closeModal('modal-timer')">✕</button></div>
+    <div id="timer-status" style="font-size:13px;color:var(--text-2);margin-bottom:8px"></div>
+    <div class="timer-presets">
+      <button class="timer-preset" onclick="setTimer(5)">5 min</button>
+      <button class="timer-preset" onclick="setTimer(15)">15 min</button>
+      <button class="timer-preset" onclick="setTimer(30)">30 min</button>
+      <button class="timer-preset" onclick="setTimer(60)">1 hour</button>
+      <button class="timer-preset" onclick="setTimer(120)">2 hours</button>
+      <button class="timer-preset" onclick="setTimer(240)">4 hours</button>
+    </div>
+    <div class="form-row" style="margin-top:16px;display:flex;gap:8px;align-items:center">
+      <input id="timer-custom-mins" type="number" class="form-input" placeholder="Custom minutes" min="1" max="1440" style="flex:1">
+      <button class="btn btn-primary" onclick="setCustomTimer()">Start</button>
+    </div>
+    <div class="modal-actions" id="timer-cancel-row" style="display:none">
+      <button class="btn btn-danger" onclick="cancelTimerBtn()">Cancel Timer</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-confirm" class="modal-backdrop">
   <div class="modal" style="max-width:360px">
     <div class="modal-title"><span id="confirm-title">Confirm</span><button class="modal-close" onclick="closeModal('modal-confirm')">✕</button></div>
@@ -1121,6 +1173,7 @@ const API = {
 // ═══════════════════════════════════════════════════════════════════════════
 const state = {
   floors: [], rooms: [], devices: [], scenes: [], schedules: [], settings: {}, lightState: {},
+  timers: {},
   activeTab: 'rooms', activeRoomId: null, mode: 'home',
 };
 
@@ -1137,7 +1190,7 @@ async function safeGet(url, fallback) {
 
 async function loadAll() {
   try {
-    const [floors, rooms, devices, scenes, schedules, settings, ls, modeData] = await Promise.all([
+    const [floors, rooms, devices, scenes, schedules, settings, ls, modeData, timers] = await Promise.all([
       safeGet('/api/floors',    []),
       safeGet('/api/rooms',     []),
       safeGet('/api/devices',   []),
@@ -1146,6 +1199,7 @@ async function loadAll() {
       safeGet('/api/settings',  {}),
       safeGet('/api/state',     {}),
       safeGet('/api/mode',      {}),
+      safeGet('/api/timers',    {}),
     ]);
     state.floors    = Array.isArray(floors)    ? floors    : [];
     state.rooms     = Array.isArray(rooms)     ? rooms     : [];
@@ -1155,6 +1209,7 @@ async function loadAll() {
     state.settings  = settings  || {};
     state.lightState = ls || {};
     state.mode      = modeData?.mode || 'home';
+    state.timers    = timers || {};
     if (!state.activeRoomId && state.rooms.length) state.activeRoomId = state.rooms[0].id;
     renderAll();
   } catch(e) {
@@ -1174,7 +1229,12 @@ function connectSSE() {
       const msg = JSON.parse(e.data);
       if (msg.type === 'init') {
         state.lightState = msg.lightState || {};
-        renderRooms(); renderWhatsOn();
+        state.timers = msg.timers || {};
+        renderRooms(); renderWhatsOn(); renderRoomContent();
+      } else if (msg.type === 'timer') {
+        if (msg.timer) state.timers[msg.key] = msg.timer;
+        else delete state.timers[msg.key];
+        if (state.activeTab === 'rooms') renderRoomContent();
       } else if (msg.type === 'lightState') {
         state.lightState[msg.key] = msg.level;
         // Update the specific card without full re-render
@@ -1336,6 +1396,7 @@ function lk(l) { return `${l.subnet}.${l.device}.${l.channel}`; }
 function renderLightCard(light) {
   const lvl = state.lightState[lk(light)] || 0;
   const on = lvl > 0;
+  const t = state.timers[lk(light)];
   return `
     <div class="light-card ${on ? 'on' : ''}" id="lcard-${lk(light)}" onclick="toggleLight(${light.subnet},${light.device},${light.channel},${lvl})" style="cursor:pointer">
       <div class="light-card-top">
@@ -1347,9 +1408,15 @@ function renderLightCard(light) {
       <div class="light-switch ${on ? 'on' : ''}">
         <div class="light-switch-thumb"></div>
       </div>
-      <button class="light-toggle" onclick="event.stopPropagation();toggleLight(${light.subnet},${light.device},${light.channel},${lvl})">
-        ${on ? 'Turn Off' : 'Turn On'}
-      </button>
+      <div class="light-actions">
+        <button class="light-toggle" onclick="event.stopPropagation();toggleLight(${light.subnet},${light.device},${light.channel},${lvl})">
+          ${on ? 'Turn Off' : 'Turn On'}
+        </button>
+        <button class="light-timer-btn${t ? ' active' : ''}" data-tkey="${lk(light)}" title="Auto-off timer"
+          onclick="event.stopPropagation();openTimerModal(${light.subnet},${light.device},${light.channel})">
+          ⏱${t ? ' ' + timerRemaining(t) : ''}
+        </button>
+      </div>
     </div>
   `;
 }
@@ -1367,6 +1434,75 @@ async function toggleLight(subnet, device, channel, currentLevel) {
     toast('Failed to control light', 'error');
   }
 }
+
+// ── Ad-hoc auto-off timers ───────────────────────────────────────────────────
+let _timerTarget = null;
+
+function timerRemaining(t) {
+  const mins = Math.max(1, Math.ceil((t.expiresAt - Date.now()) / 60000));
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+}
+
+function openTimerModal(subnet, device, channel) {
+  _timerTarget = { subnet, device, channel };
+  const k = `${subnet}.${device}.${channel}`;
+  let name = k;
+  for (const room of state.rooms) {
+    const l = (room.lights || []).find(l => lk(l) === k);
+    if (l) { name = l.name; break; }
+  }
+  document.getElementById('timer-title').textContent = `⏱ ${name}`;
+  const t = state.timers[k];
+  const on = (state.lightState[k] || 0) > 0;
+  document.getElementById('timer-status').textContent = t
+    ? `Turns off in ${timerRemaining(t)} — pick a new duration to extend:`
+    : (on ? 'Turn off automatically after:' : 'Light is off — starting a timer turns it on, then off after:');
+  document.getElementById('timer-cancel-row').style.display = t ? 'flex' : 'none';
+  document.getElementById('timer-custom-mins').value = '';
+  openModal('modal-timer');
+}
+
+async function setTimer(minutes) {
+  if (!_timerTarget) return;
+  const { subnet, device, channel } = _timerTarget;
+  closeModal('modal-timer');
+  try {
+    const r = await API.post('/api/timer', { subnet, device, channel, minutes });
+    if (r.ok) {
+      state.timers[r.key] = r.timer;
+      renderRoomContent();
+      toast(`⏱ Off in ${minutes >= 60 ? Math.floor(minutes/60) + 'h ' + (minutes % 60 ? minutes % 60 + 'm' : '') : minutes + ' min'}`);
+    } else {
+      toast(r.error || 'Failed to set timer', 'error');
+    }
+  } catch(e) { toast('Failed to set timer', 'error'); }
+}
+
+function setCustomTimer() {
+  const v = parseInt(document.getElementById('timer-custom-mins').value, 10);
+  if (!v || v < 1 || v > 1440) { toast('Enter 1–1440 minutes', 'error'); return; }
+  setTimer(v);
+}
+
+async function cancelTimerBtn() {
+  if (!_timerTarget) return;
+  const k = `${_timerTarget.subnet}.${_timerTarget.device}.${_timerTarget.channel}`;
+  closeModal('modal-timer');
+  try {
+    await API.del(`/api/timers/${k}`);
+    delete state.timers[k];
+    renderRoomContent();
+    toast('Timer cancelled');
+  } catch(e) { toast('Failed to cancel timer', 'error'); }
+}
+
+// Refresh countdown badges once a minute without a full re-render
+setInterval(() => {
+  for (const [k, t] of Object.entries(state.timers)) {
+    const btn = document.querySelector(`.light-timer-btn[data-tkey="${k}"]`);
+    if (btn) btn.textContent = `⏱ ${timerRemaining(t)}`;
+  }
+}, 60000);
 
 async function roomAllOn(roomId) {
   const room = state.rooms.find(r => r.id === roomId);
@@ -2474,6 +2610,7 @@ async function renderActivity() {
     scene:      { color: 'var(--accent)',  icon: '✨' },
     schedule:   { color: 'var(--green)',   icon: '⏰' },
     mode:       { color: 'var(--text-2)',  icon: '🏠' },
+    timer:      { color: 'var(--amber)',   icon: '⏱' },
     failure:    { color: 'var(--red)',     icon: '⚠️' },
     wall_panel: { color: 'var(--accent)',  icon: '🔘' },
   };

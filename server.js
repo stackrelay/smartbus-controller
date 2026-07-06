@@ -111,6 +111,52 @@ function logActivity(type, description, details) {
     scheduleActivitySave();
 }
 
+// ─── Ad-hoc countdown timers ─────────────────────────────────────────────────
+// Key: "subnet.device.channel"  Value: { expiresAt: ms epoch, minutes }
+// Persisted so a server restart doesn't leave a light on past its timer.
+const TIMERS_FILE = path.join(DATA_DIR, 'timers.json');
+let timers = {};
+
+function loadTimers() {
+    try {
+        if (fs.existsSync(TIMERS_FILE))
+            timers = JSON.parse(fs.readFileSync(TIMERS_FILE, 'utf8'));
+    } catch { timers = {}; }
+}
+
+function saveTimers() {
+    try { fs.writeFileSync(TIMERS_FILE, JSON.stringify(timers)); } catch {}
+}
+
+function cancelTimer(k) {
+    if (!timers[k]) return false;
+    delete timers[k];
+    saveTimers();
+    broadcastEvent({ type: 'timer', key: k, timer: null });
+    return true;
+}
+
+async function checkTimers() {
+    const now = Date.now();
+    for (const k of Object.keys(timers)) {
+        const t = timers[k];
+        if (t.expiresAt > now) continue;
+        delete timers[k];
+        saveTimers();
+        broadcastEvent({ type: 'timer', key: k, timer: null });
+        const [subnet, device, channel] = k.split('.').map(Number);
+        try {
+            await lightCmd(subnet, device, channel, 0, true);
+            logActivity('timer', `Timer expired — OFF: ${deviceName(subnet, device, channel)}`,
+                { subnet, device, channel, minutes: t.minutes });
+            console.log(`[Timer] Expired (${t.minutes} min) — turned off ${k}`);
+        } catch (e) {
+            console.error(`[Timer] Failed to turn off ${k}:`, e.message);
+        }
+    }
+}
+setInterval(checkTimers, 10000);
+
 // ─── Data layer ───────────────────────────────────────────────────────────────
 const DB_FILES = ['floors', 'rooms', 'devices', 'scenes', 'schedules', 'settings'];
 
@@ -187,6 +233,15 @@ function lightKey(subnet, device, channel) {
     return `${subnet}.${device}.${channel}`;
 }
 
+function deviceName(subnet, device, channel) {
+    for (const room of db.rooms) {
+        const l = (room.lights || []).find(l =>
+            l.subnet == subnet && l.device == device && l.channel == channel);
+        if (l) return `${room.name} / ${l.name}`;
+    }
+    return `${subnet}.${device} ch${channel}`;
+}
+
 function saveLightState() {
     try { fs.writeFileSync(LIGHT_STATE_FILE, JSON.stringify(lightState)); } catch (e) {}
 }
@@ -232,6 +287,7 @@ async function lightCmd(subnet, device, channel, level, skipLog) {
     const changed = lightState[k] !== level;
     lightState[k] = level;
     if (changed) saveLightState();
+    if (level === 0) cancelTimer(k); // manual off cancels any countdown
     broadcastEvent({ type: 'lightState', key: k, level });
     if (!skipLog) {
         let devName = `${subnet}.${device} ch${channel}`;
@@ -251,6 +307,7 @@ function updateLightState(subnet, device, channel, level, logChange) {
     if (prev !== level) {
         saveLightState();
         broadcastEvent({ type: 'lightState', key: k, level });
+        if (level === 0) cancelTimer(k); // switched off externally (e.g. wall panel)
     }
     if (logChange && prev !== level) {
         let devName = `${subnet}.${device} ch${channel}`;
@@ -567,6 +624,7 @@ async function allOff() {
                 if (light.subnet == d.subnet && light.device == d.device) {
                     const k = lightKey(light.subnet, light.device, light.channel);
                     lightState[k] = 0;
+                    cancelTimer(k);
                     broadcastEvent({ type: 'lightState', key: k, level: 0 });
                 }
         prev = d;
@@ -648,7 +706,7 @@ const server = http.createServer(async (req, res) => {
                 'Access-Control-Allow-Origin': '*',
             });
             // Send current state immediately on connect
-            res.write(`data: ${JSON.stringify({ type: 'init', lightState })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'init', lightState, timers })}\n\n`);
             sseClients.add(res);
             // Keepalive comment every 30s to prevent proxy timeouts
             const hb = setInterval(() => {
@@ -688,6 +746,40 @@ const server = http.createServer(async (req, res) => {
             } catch (err) {
                 return reply(res, 500, { ok: false, error: err.message });
             }
+        }
+
+        // ── TIMERS (ad-hoc auto-off countdowns) ───────────────────────────────
+        if (method === 'GET' && p === '/api/timers') {
+            return reply(res, 200, timers);
+        }
+        if (method === 'POST' && p === '/api/timer') {
+            const body = await parseBody(req);
+            const { subnet = 1, device, channel, minutes } = body;
+            const mins = Number(minutes);
+            if (device == null || channel == null || !mins || mins < 1 || mins > 1440)
+                return reply(res, 400, { error: 'Required: device, channel, minutes (1-1440)' });
+            const k = lightKey(subnet, device, channel);
+            try {
+                // Setting a timer on an OFF light turns it on ("on for N minutes")
+                if (!lightState[k])
+                    await lightCmd(Number(subnet), Number(device), Number(channel), 100);
+                timers[k] = { expiresAt: Date.now() + mins * 60000, minutes: mins };
+                saveTimers();
+                broadcastEvent({ type: 'timer', key: k, timer: timers[k] });
+                logActivity('timer', `Timer set (${mins} min): ${deviceName(subnet, device, channel)}`,
+                    { subnet, device, channel, minutes: mins });
+                return reply(res, 200, { ok: true, key: k, timer: timers[k] });
+            } catch (err) {
+                return reply(res, 500, { ok: false, error: err.message });
+            }
+        }
+        const timerMatch = p.match(/^\/api\/timers\/([^/]+)$/);
+        if (timerMatch && method === 'DELETE') {
+            const k = timerMatch[1];
+            if (!cancelTimer(k)) return reply(res, 404, { error: 'No timer for ' + k });
+            const [ts, td, tc] = k.split('.');
+            logActivity('timer', `Timer cancelled: ${deviceName(ts, td, tc)}`, { key: k });
+            return reply(res, 200, { ok: true });
         }
 
         // ── MODE (Feature 3) ──────────────────────────────────────────────────
@@ -779,6 +871,7 @@ const server = http.createServer(async (req, res) => {
                             if (light.subnet == d.subnet && light.device == d.device) {
                                 const k = lightKey(light.subnet, light.device, light.channel);
                                 lightState[k] = 0;
+                                cancelTimer(k);
                                 broadcastEvent({ type: 'lightState', key: k, level: 0 });
                             }
                     prev = d; count++;
@@ -974,6 +1067,7 @@ const server = http.createServer(async (req, res) => {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadDb();
 loadActivity();
+loadTimers();
 initLightState();
 startUdpListener();
 
