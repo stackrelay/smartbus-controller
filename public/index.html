@@ -219,6 +219,8 @@ a { color: inherit; text-decoration: none; }
   display: flex; gap: 8px; flex-wrap: wrap;
   align-items: center;
 }
+.room-floor-group.collapsed .room-pills { display: none; }
+.room-floor-label .group-toggle-area { cursor: pointer; }
 .room-pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 16px;
@@ -238,6 +240,9 @@ a { color: inherit; text-decoration: none; }
 
 @media (max-width: 767px) {
   .room-floors { padding: 0 16px 4px; }
+}
+@media (max-width: 349px) {
+  .lights-grid { grid-template-columns: 1fr !important; }
 }
 
 /* ── Room content ───────────────────────────────────────────────────────── */
@@ -430,7 +435,8 @@ a { color: inherit; text-decoration: none; }
 .room-group.collapsed .room-devices { display: none; }
 .group-toggle-area { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; user-select: none; }
 .group-chevron { display: inline-block; font-size: 11px; color: var(--text-3); transition: transform var(--transition); flex-shrink: 0; }
-.floor-group.collapsed .group-chevron, .room-group.collapsed .group-chevron { transform: rotate(-90deg); }
+.floor-group.collapsed .group-chevron, .room-group.collapsed .group-chevron,
+.room-floor-group.collapsed .group-chevron { transform: rotate(-90deg); }
 .device-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 8px; background: var(--surface); font-size: 12px; }
 .device-row-info { display: flex; align-items: center; gap: 8px; }
 .unassigned-rooms { margin-top: 4px; padding: 8px 12px; background: rgba(239,68,68,0.08); border: 1px dashed rgba(239,68,68,0.3); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-2); }
@@ -1464,8 +1470,23 @@ function renderRooms() {
   const totalLights = state.rooms.reduce((s,r) => s + (r.lights||[]).length, 0);
   document.getElementById('rooms-subtitle').textContent = `${state.rooms.length} rooms · ${totalLights} devices`;
 
+  // Preserve which floor groups the user collapsed. renderRooms() re-runs on
+  // every SSE light-state event, so this must be read off the DOM each time.
+  // Floors default expanded here — the pills are the primary navigation.
+  const collapsedFids = new Set([...wrap.querySelectorAll('.room-floor-group.collapsed')].map(el => el.dataset.fid));
+
   const BAD = new Set([null, undefined, '', 'undefined', 'null', '0']);
   const validFid = r => r.floorId && !BAD.has(r.floorId) && state.floors.find(f => f.id === r.floorId);
+
+  const floorLabel = (fid, labelHtml, roomCount, allOffBtn) => `
+    <div class="room-floor-label" style="display:flex;align-items:center;justify-content:space-between">
+      <div class="group-toggle-area" onclick="toggleFloorPills('${fid}')">
+        <span class="group-chevron">▾</span>
+        <span>${labelHtml}</span>
+        <span style="font-weight:400">(${roomCount})</span>
+      </div>
+      ${allOffBtn}
+    </div>`;
 
   let html = '';
 
@@ -1475,11 +1496,9 @@ function renderRooms() {
       const rooms = state.rooms.filter(r => validFid(r) && r.floorId === floor.id);
       if (rooms.length === 0) return; // skip empty floors on home screen
       html += `
-        <div class="room-floor-group">
-          <div class="room-floor-label" style="display:flex;align-items:center;justify-content:space-between">
-            <span>🏢 ${esc(floor.name)}</span>
-            <button onclick="floorAllOff('${floor.id}')" style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-3);cursor:pointer;line-height:1.4">All Off</button>
-          </div>
+        <div class="room-floor-group${collapsedFids.has(floor.id) ? ' collapsed' : ''}" data-fid="${floor.id}">
+          ${floorLabel(floor.id, `🏢 ${esc(floor.name)}`, rooms.length,
+            `<button onclick="floorAllOff('${floor.id}')" style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-3);cursor:pointer;line-height:1.4">All Off</button>`)}
           <div class="room-pills">${rooms.map(roomPill).join('')}</div>
         </div>`;
     });
@@ -1488,13 +1507,13 @@ function renderRooms() {
     const unassigned = state.rooms.filter(r => !validFid(r));
     if (unassigned.length > 0) {
       html += `
-        <div class="room-floor-group">
-          <div class="room-floor-label">Other</div>
+        <div class="room-floor-group${collapsedFids.has('__other') ? ' collapsed' : ''}" data-fid="__other">
+          ${floorLabel('__other', 'Other', unassigned.length, '')}
           <div class="room-pills">${unassigned.map(roomPill).join('')}</div>
         </div>`;
     }
   } else {
-    // No floors defined — show flat pill list
+    // No floors defined — show flat pill list (nothing to collapse)
     html = `<div class="room-floor-group"><div class="room-pills">${state.rooms.map(roomPill).join('')}</div></div>`;
   }
 
@@ -2034,6 +2053,9 @@ function toggleFloorGroup(id) {
 }
 function toggleRoomGroup(id) {
   document.querySelector(`.room-group[data-room-id="${id}"]`)?.classList.toggle('collapsed');
+}
+function toggleFloorPills(fid) {
+  document.querySelector(`.room-floor-group[data-fid="${fid}"]`)?.classList.toggle('collapsed');
 }
 
 function accordion(id, icon, title, body) {
