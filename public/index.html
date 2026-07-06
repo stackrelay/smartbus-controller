@@ -1025,6 +1025,12 @@ select.form-input { cursor: pointer; }
         </select>
       </div>
     </div>
+    <div class="form-row" style="margin-top:14px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2);cursor:pointer">
+        <input type="checkbox" id="light-exclude-longon" style="width:16px;height:16px">
+        Exclude from "on too long" alerts
+      </label>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-light')">Cancel</button>
       <button class="btn btn-primary" onclick="saveLight()">Save</button>
@@ -1381,6 +1387,9 @@ function connectSSE() {
         if (state.activeTab === 'activity') renderActivity();
       } else if (msg.type === 'wallPanelScene') {
         toast(`🔘 Wall panel: area ${msg.area} scene ${msg.sceneNo}`);
+        if (state.activeTab === 'activity') renderActivity();
+      } else if (msg.type === 'longOnAlert') {
+        toast(`⏳ ${msg.devName} has been on for ${msg.hours}h`, 'error');
         if (state.activeTab === 'activity') renderActivity();
       }
     } catch(e) {}
@@ -1911,6 +1920,10 @@ function renderSettings() {
           <input id="set-lon" type="number" step="0.0001" class="form-input" value="${s.longitude || -74.006}">
         </div>
       </div>
+      <div class="form-row" style="margin-top:4px">
+        <label class="form-label">Alert if a light is on longer than (hours, 0 = off)</label>
+        <input id="set-longon-hours" type="number" step="0.5" min="0" class="form-input" value="${s.longOnAlertHours || 0}">
+      </div>
       <button class="btn btn-primary" style="align-self:flex-start" onclick="saveSettings()">Save Settings</button>
     </div>
   `;
@@ -2008,7 +2021,8 @@ async function saveSettings() {
   const ip  = document.getElementById('set-ip').value.trim();
   const lat = parseFloat(document.getElementById('set-lat').value);
   const lon = parseFloat(document.getElementById('set-lon').value);
-  const data = { ...state.settings, gatewayIp: ip, latitude: lat, longitude: lon };
+  const longOnAlertHours = parseFloat(document.getElementById('set-longon-hours').value) || 0;
+  const data = { ...state.settings, gatewayIp: ip, latitude: lat, longitude: lon, longOnAlertHours };
   try {
     const updated = await API.put('/api/settings', data);
     state.settings = updated;
@@ -2271,6 +2285,7 @@ function openLightModal(lightId, roomId) {
   document.getElementById('light-type').value    = light?.type    || 'relay';
   // ensure the stored value exists in the list (graceful fallback)
   if (!document.getElementById('light-type').value) document.getElementById('light-type').value = 'other';
+  document.getElementById('light-exclude-longon').checked = !!light?.excludeLongOnAlert;
   buildIconPicker(light?.icon || '💡');
 
   // Populate room selector
@@ -2325,7 +2340,8 @@ async function saveLight() {
   if (!room) { toast('Please select a room', 'error'); return; }
 
   const icon = getSelectedIcon();
-  const lightObj = { id: _lightEditId || nanoid6(), name, icon, subnet, device, channel, type };
+  const excludeLongOnAlert = document.getElementById('light-exclude-longon').checked;
+  const lightObj = { id: _lightEditId || nanoid6(), name, icon, subnet, device, channel, type, excludeLongOnAlert };
 
   if (_lightEditId) {
     room.lights = (room.lights||[]).map(l => l.id === _lightEditId ? lightObj : l);
@@ -2798,6 +2814,7 @@ async function renderActivity() {
     schedule:   { color: 'var(--green)',   icon: '⏰' },
     mode:       { color: 'var(--text-2)',  icon: '🏠' },
     timer:      { color: 'var(--amber)',   icon: '⏱' },
+    longOn:     { color: 'var(--red)',     icon: '⏳' },
     auth:       { color: 'var(--accent)',  icon: '🔐' },
     failure:    { color: 'var(--red)',     icon: '⚠️' },
     wall_panel: { color: 'var(--accent)',  icon: '🔘' },

@@ -319,6 +319,44 @@ function saveLightState() {
     try { fs.writeFileSync(LIGHT_STATE_FILE, JSON.stringify(lightState)); } catch (e) {}
 }
 
+// ─── "On too long" alerts ──────────────────────────────────────────────────────
+// Not persisted to disk — on a restart, lights already on just restart their
+// clock from boot time, which is an acceptable simplification for this feature.
+const lightOnSince = {};      // key -> ms epoch when this light last turned on
+const longOnAlerted = {};     // key -> true once alerted for the CURRENT on-session
+
+function noteLightTransition(k, prevLevel, newLevel) {
+    if (newLevel > 0 && !(prevLevel > 0)) {
+        lightOnSince[k] = Date.now();
+    } else if (newLevel === 0) {
+        delete lightOnSince[k];
+        delete longOnAlerted[k];
+    }
+}
+
+function checkLongOnAlerts() {
+    const hours = Number(db.settings.longOnAlertHours) || 0;
+    if (!hours) return;
+    const thresholdMs = hours * 3600000;
+    const now = Date.now();
+    for (const room of db.rooms) {
+        for (const light of (room.lights || [])) {
+            if (light.excludeLongOnAlert) continue;
+            const k = lightKey(light.subnet, light.device, light.channel);
+            if (!(lightState[k] > 0) || longOnAlerted[k]) continue;
+            const since = lightOnSince[k];
+            if (!since || now - since < thresholdMs) continue;
+            longOnAlerted[k] = true;
+            const hoursOn = ((now - since) / 3600000).toFixed(1);
+            const devName = deviceName(light.subnet, light.device, light.channel);
+            logActivity('longOn', `⏳ On for ${hoursOn}h: ${devName}`,
+                { subnet: light.subnet, device: light.device, channel: light.channel, hours: hoursOn });
+            broadcastEvent({ type: 'longOnAlert', key: k, devName, hours: hoursOn });
+        }
+    }
+}
+setInterval(checkLongOnAlerts, 30000);
+
 function initLightState() {
     // Load persisted state from last run
     try {
@@ -334,6 +372,8 @@ function initLightState() {
         for (const light of (room.lights || [])) {
             const k = lightKey(light.subnet, light.device, light.channel);
             if (lightState[k] === undefined) lightState[k] = 0;
+            // Lights already on at boot start their "on too long" clock now
+            if (lightState[k] > 0) lightOnSince[k] = Date.now();
         }
     }
 }
@@ -357,9 +397,10 @@ async function lightCmd(subnet, device, channel, level, skipLog) {
     const pkt = buildDimmerPacket(Number(subnet), Number(device), Number(channel), Number(level));
     await sendPacket(pkt);
     const k = lightKey(subnet, device, channel);
-    const changed = lightState[k] !== level;
+    const prevLevel = lightState[k];
+    const changed = prevLevel !== level;
     lightState[k] = level;
-    if (changed) saveLightState();
+    if (changed) { saveLightState(); noteLightTransition(k, prevLevel, level); }
     if (level === 0) cancelTimer(k); // manual off cancels any countdown
     broadcastEvent({ type: 'lightState', key: k, level });
     if (!skipLog) {
@@ -379,6 +420,7 @@ function updateLightState(subnet, device, channel, level, logChange) {
     lightState[k] = level;
     if (prev !== level) {
         saveLightState();
+        noteLightTransition(k, prev, level);
         broadcastEvent({ type: 'lightState', key: k, level });
         if (level === 0) cancelTimer(k); // switched off externally (e.g. wall panel)
     }
@@ -696,6 +738,7 @@ async function allOff() {
             for (const light of (room.lights || []))
                 if (light.subnet == d.subnet && light.device == d.device) {
                     const k = lightKey(light.subnet, light.device, light.channel);
+                    noteLightTransition(k, lightState[k], 0);
                     lightState[k] = 0;
                     cancelTimer(k);
                     broadcastEvent({ type: 'lightState', key: k, level: 0 });
@@ -1005,6 +1048,7 @@ const server = http.createServer(async (req, res) => {
                         for (const light of (room.lights || []))
                             if (light.subnet == d.subnet && light.device == d.device) {
                                 const k = lightKey(light.subnet, light.device, light.channel);
+                                noteLightTransition(k, lightState[k], 0);
                                 lightState[k] = 0;
                                 cancelTimer(k);
                                 broadcastEvent({ type: 'lightState', key: k, level: 0 });

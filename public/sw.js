@@ -1,4 +1,4 @@
-const CACHE = 'smartbus-v4';
+const CACHE = 'smartbus-v5';
 const PRECACHE = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', e => {
