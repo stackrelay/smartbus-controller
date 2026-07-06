@@ -241,12 +241,14 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 767px) {
   .room-floors { padding: 0 16px 4px; }
 }
-@media (max-width: 349px) {
-  .lights-grid { grid-template-columns: 1fr !important; }
-}
-
 /* ── Room content ───────────────────────────────────────────────────────── */
 .room-content { padding: 0 32px 32px; }
+.room-section { margin-bottom: 30px; scroll-margin-top: 12px; border-radius: var(--radius); }
+@keyframes jump-flash {
+  0%   { background: var(--accent-glow); }
+  100% { background: transparent; }
+}
+.room-section.jump-highlight { animation: jump-flash 1.4s ease forwards; }
 .room-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px;
@@ -284,33 +286,6 @@ a { color: inherit; text-decoration: none; }
   transition: transform 0.2s, background 0.2s;
 }
 .light-switch.on .light-switch-thumb { transform: translateX(18px); background: #fff; }
-
-/* ── Mobile (iPhone) — 2-column compact grid ────────────────────────── */
-@media (max-width: 767px) {
-  .lights-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0; }
-  .light-card {
-    display: flex; align-items: center;
-    padding: 8px 10px; gap: 8px;
-    min-height: unset; height: 44px;
-  }
-  .light-card::before { display: none; }
-  .light-card-top { display: contents; }
-  .light-icon { width: 24px; height: 24px; font-size: 14px; flex-shrink: 0; margin-bottom: 0; border-radius: 6px; }
-  .light-name { flex: 1; font-size: 12px; font-weight: 600; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .light-meta { display: none; }
-  .light-status { display: none; }
-  .light-toggle { display: none; }
-  .light-switch { display: none; } /* on-state already shown by card glow; frees space for name + timer */
-  .light-actions { display: contents; }
-  .light-timer-btn { padding: 4px 8px; font-size: 11px; flex-shrink: 0; border-radius: 6px; }
-  .room-content { padding: 0 12px 16px; }
-  .room-header { padding: 8px 12px; }
-  .room-header-title { font-size: 14px; }
-  .section-header { padding: 10px 12px 0; margin-bottom: 8px; }
-  .room-floors { padding: 0 12px 4px; }
-  .room-floor-label { font-size: 10px; }
-  .scenes-grid { grid-template-columns: repeat(2, 1fr); }
-}
 
 .light-card {
   background: var(--card);
@@ -464,43 +439,34 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 767px) { .scenes-grid { padding: 0 16px 24px; grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 400px) { .scenes-grid { grid-template-columns: 1fr; } }
 
-.scene-card {
+.scene-tile {
+  display: flex; align-items: center; gap: 10px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 22px 18px 18px;
-  position: relative;
-  transition: all 0.25s ease;
-}
-.scene-card:hover { background: var(--card-hover); border-color: var(--border-mid); }
-.scene-card-actions {
-  position: absolute; top: 12px; right: 12px;
-  display: flex; gap: 4px;
-  opacity: 0; transition: opacity var(--transition);
-}
-.scene-card:hover .scene-card-actions { opacity: 1; }
-.scene-icon { font-size: 40px; display: block; margin-bottom: 12px; line-height: 1; }
-.scene-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
-.scene-meta { font-size: 12px; color: var(--text-3); margin-bottom: 16px; }
-.btn-activate {
-  width: 100%;
-  padding: 10px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
   border-radius: var(--radius-sm);
-  font-size: 13px; font-weight: 700;
-  letter-spacing: 0.3px;
+  padding: 10px 12px;
+  cursor: pointer;
   transition: all var(--transition);
 }
-.btn-activate:hover { background: var(--accent-dim); box-shadow: 0 0 20px var(--accent-glow); }
+.scene-tile:hover { background: var(--card-hover); border-color: var(--accent); }
+.scene-tile-icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
+.scene-tile-info { flex: 1; min-width: 0; }
+.scene-tile-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scene-tile-meta { font-size: 11px; color: var(--text-3); }
+.scene-tile-btns { display: flex; gap: 2px; flex-shrink: 0; }
+.scene-tile-btns button {
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; padding: 4px; border-radius: 6px;
+  opacity: 0.55; transition: all var(--transition); line-height: 1;
+}
+.scene-tile-btns button:hover { opacity: 1; background: var(--surface); }
 
 @keyframes pulse-green {
   0%   { box-shadow: 0 0 0 0 var(--green-glow); border-color: var(--green); }
   50%  { box-shadow: 0 0 30px 8px var(--green-glow); border-color: var(--green); }
   100% { box-shadow: 0 0 0 0 transparent; border-color: var(--border); }
 }
-.scene-card.activated { animation: pulse-green 1.2s ease forwards; }
+.scene-tile.activated { animation: pulse-green 1.2s ease forwards; }
 
 /* ── Schedules ──────────────────────────────────────────────────────────── */
 .schedules-list { padding: 0 32px 32px; display: flex; flex-direction: column; gap: 12px; }
@@ -822,6 +788,37 @@ select.form-input { cursor: pointer; }
 .level-btn.on.active { background: rgba(245,158,11,0.2); border-color: var(--amber); color: var(--amber); }
 .level-btn.off.active { background: var(--card); border-color: var(--border-mid); color: var(--text); }
 .level-btn:hover { border-color: var(--border-mid); }
+
+/* ── Mobile (iPhone) — compact overrides ─────────────────────────────────
+   KEEP THIS BLOCK LAST in the stylesheet: these rules share specificity
+   with the base rules above, so source order is what makes them win. */
+@media (max-width: 767px) {
+  .lights-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0; }
+  .light-card {
+    display: flex; align-items: center;
+    padding: 8px 10px; gap: 8px;
+    min-height: unset; height: 44px;
+  }
+  .light-card::before { display: none; }
+  .light-card-top { display: contents; }
+  .light-icon { width: 24px; height: 24px; font-size: 14px; flex-shrink: 0; margin-bottom: 0; border-radius: 6px; }
+  .light-name { flex: 1; font-size: 12px; font-weight: 600; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .light-meta { display: none; }
+  .light-status { display: none; }
+  .light-toggle { display: none; }
+  .light-switch { display: none; } /* on-state already shown by card glow; frees space for name + timer */
+  .light-actions { display: contents; }
+  .light-timer-btn { padding: 4px 8px; font-size: 11px; flex-shrink: 0; border-radius: 6px; }
+  .room-content { padding: 0 12px 16px; }
+  .room-header { padding: 8px 12px; }
+  .room-header-title { font-size: 14px; }
+  .section-header { padding: 10px 12px 0; margin-bottom: 8px; }
+  .room-floors { padding: 0 12px 4px; }
+  .room-floor-label { font-size: 10px; }
+}
+@media (max-width: 349px) {
+  .lights-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
@@ -869,14 +866,10 @@ select.form-input { cursor: pointer; }
           <div class="section-title">Rooms</div>
           <div class="section-subtitle" id="rooms-subtitle">Loading…</div>
         </div>
-        <button onclick="refreshState()" id="refresh-btn" title="Refresh device states" style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:16px;color:var(--text-2);transition:all 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">↻</button>
-      </div>
-      <!-- Mode toggle -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 24px 8px">
-        <span style="font-size:12px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Presence</span>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;align-items:center">
           <button id="mode-home-btn" onclick="setMode('home')" style="padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text-2);font-size:12px;cursor:pointer;transition:all 0.2s">🏠 Home</button>
           <button id="mode-away-btn" onclick="setMode('away')" style="padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text-2);font-size:12px;cursor:pointer;transition:all 0.2s">🌙 Away</button>
+          <button onclick="refreshState()" id="refresh-btn" title="Refresh device states" style="background:none;border:1px solid var(--border);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:14px;color:var(--text-2);transition:all 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">↻</button>
         </div>
       </div>
       <!-- What's On -->
@@ -1462,7 +1455,7 @@ function roomPill(r) {
   const badge = onCount > 0
     ? `<span style="display:inline-flex;align-items:center;justify-content:center;background:var(--amber);color:#000;border-radius:99px;font-size:10px;font-weight:700;min-width:16px;height:16px;padding:0 3px;margin-left:4px">${onCount}</span>`
     : '';
-  return `<button class="room-pill ${active ? 'active' : ''}" onclick="selectRoom('${r.id}')" style="${style}">${r.icon || '💡'} ${esc(r.name)}${badge}</button>`;
+  return `<button class="room-pill ${active ? 'active' : ''}" data-room-id="${r.id}" onclick="selectRoom('${r.id}')" style="${style}">${r.icon || '💡'} ${esc(r.name)}${badge}</button>`;
 }
 
 function renderRooms() {
@@ -1523,33 +1516,53 @@ function renderRooms() {
   renderRoomContent();
 }
 
+// Pills are jump-links: clicking scrolls to that room's section (all rooms
+// are rendered at once) instead of swapping which single room is visible.
 function selectRoom(id) {
   state.activeRoomId = id;
-  renderRooms();
+  // Update pill highlight in place — a full re-render would cancel the scroll
+  document.querySelectorAll('.room-pill').forEach(p =>
+    p.classList.toggle('active', p.dataset.roomId === id));
+  const sec = document.getElementById(`rsec-${id}`);
+  if (sec) {
+    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    sec.classList.remove('jump-highlight');
+    void sec.offsetWidth; // restart the animation if re-clicked
+    sec.classList.add('jump-highlight');
+  }
 }
 
 function renderRoomContent() {
   const el = document.getElementById('room-content');
-  const room = state.rooms.find(r => r.id === state.activeRoomId);
-  if (!room) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏠</div><div class="empty-title">No rooms yet</div><div class="empty-desc">Add a room to get started.</div></div>'; return; }
+  if (!state.rooms.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏠</div><div class="empty-title">No rooms yet</div><div class="empty-desc">Add a room to get started.</div><button class="btn btn-primary" style="margin-top:14px" onclick="openRoomModal()">+ Add Room</button></div>';
+    return;
+  }
 
-  const lights = room.lights || [];
-  const allOn  = lights.length > 0 && lights.every(l => (state.lightState[lk(l)] || 0) >= 100);
-  const allOff = lights.every(l => (state.lightState[lk(l)] || 0) === 0);
+  const BAD = new Set([null, undefined, '', 'undefined', 'null', '0']);
+  const validFid = r => r.floorId && !BAD.has(r.floorId) && state.floors.find(f => f.id === r.floorId);
+  const ordered = [];
+  for (const floor of state.floors)
+    for (const r of state.rooms) if (validFid(r) && r.floorId === floor.id) ordered.push(r);
+  for (const r of state.rooms) if (!validFid(r)) ordered.push(r);
 
-  el.innerHTML = `
-    <div class="room-header">
-      <div class="room-header-title">${room.icon || '💡'} ${esc(room.name)}</div>
-      <div class="room-header-actions">
-        <button class="btn btn-ghost btn-sm" onclick="roomAllOn('${room.id}')">All On</button>
-        <button class="btn btn-ghost btn-sm" onclick="roomAllOff('${room.id}')">All Off</button>
-      </div>
-    </div>
-    ${lights.length === 0
-      ? `<div class="empty-state" style="padding:40px 0"><div class="empty-icon">💡</div><div class="empty-title">No devices yet</div><div class="empty-desc">Add devices in Settings → Devices</div></div>`
-      : `<div class="lights-grid">${lights.map(l => renderLightCard(l)).join('')}</div>`
-    }
-  `;
+  el.innerHTML = ordered.map(room => {
+    const lights = room.lights || [];
+    return `
+      <div class="room-section" id="rsec-${room.id}">
+        <div class="room-header">
+          <div class="room-header-title">${room.icon || '💡'} ${esc(room.name)}</div>
+          <div class="room-header-actions">
+            <button class="btn btn-ghost btn-sm" onclick="roomAllOn('${room.id}')">All On</button>
+            <button class="btn btn-ghost btn-sm" onclick="roomAllOff('${room.id}')">All Off</button>
+          </div>
+        </div>
+        ${lights.length === 0
+          ? `<div style="font-size:13px;color:var(--text-3);padding:2px 0 6px">No devices yet — add them in Settings</div>`
+          : `<div class="lights-grid">${lights.map(l => renderLightCard(l)).join('')}</div>`
+        }
+      </div>`;
+  }).join('');
 }
 
 function lk(l) { return `${l.subnet}.${l.device}.${l.channel}`; }
@@ -1695,39 +1708,26 @@ function renderScenes() {
       <div class="empty-icon">✨</div>
       <div class="empty-title">No scenes yet</div>
       <div class="empty-desc">Create a scene to control multiple lights at once.</div>
+      <button class="btn btn-primary" style="margin-top:14px" onclick="openSceneModal()">+ New Scene</button>
     </div>`;
     return;
   }
+  // Compact tiles: tap anywhere to activate; edit/delete/favourite are small
+  // inline buttons. Action details live in the editor.
   grid.innerHTML = state.scenes.map(s => {
-    const previewHtml = (s.actions||[]).map(a => {
-      let lbl;
-      if (a.type === 'floor') {
-        const f = state.floors.find(x => x.id === a.floorId);
-        lbl = '🏢 ' + esc(f ? f.name : 'Floor');
-      } else if (a.type === 'room') {
-        const r = state.rooms.find(x => x.id === a.roomId);
-        lbl = (r ? r.icon : '🏠') + ' ' + esc(r ? r.name : 'Room');
-      } else {
-        const r = state.rooms.find(r2 => (r2.lights||[]).some(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel));
-        const l = r ? (r.lights||[]).find(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel) : null;
-        lbl = l ? (l.icon||'💡') + ' ' + esc(l.name) : esc(a.label || `${a.subnet}.${a.device} ch${a.channel}`);
-      }
-      return `<div style="padding:2px 0;font-size:12px">${lbl} → <span style="color:${a.level>0?'var(--amber)':'var(--text-3)'};font-weight:600">${a.level>0?'ON':'OFF'}</span></div>`;
-    }).join('') || '<div style="color:var(--text-3);font-size:12px">No actions</div>';
-
+    const n = (s.actions||[]).length;
     return `
-    <div class="scene-card" id="scard-${s.id}" style="position:relative">
-      <button onclick="toggleFav('${s.id}',${!!s.favourite})" title="Favourite" style="position:absolute;top:8px;left:8px;background:none;border:none;cursor:pointer;font-size:15px;opacity:${s.favourite?1:0.35};line-height:1">${s.favourite?'⭐':'☆'}</button>
-      <div class="scene-card-actions">
-        <button class="btn btn-icon btn-ghost" onclick="openSceneModal('${s.id}')" title="Edit">✏️</button>
-        <button class="btn btn-icon btn-danger" onclick="deleteScene('${s.id}')" title="Delete">🗑️</button>
+    <div class="scene-tile" id="scard-${s.id}" onclick="activateScene('${s.id}')" title="Tap to activate">
+      <span class="scene-tile-icon">${s.icon || '✨'}</span>
+      <div class="scene-tile-info">
+        <div class="scene-tile-name">${esc(s.name)}</div>
+        <div class="scene-tile-meta">${n} action${n !== 1 ? 's' : ''}</div>
       </div>
-      <span class="scene-icon">${s.icon || '✨'}</span>
-      <div class="scene-name">${esc(s.name)}</div>
-      <div class="scene-meta">${(s.actions||[]).length} action${(s.actions||[]).length !== 1 ? 's' : ''}</div>
-      <button class="btn-activate" onclick="activateScene('${s.id}')">ACTIVATE</button>
-      <button onclick="toggleScenePreview('${s.id}')" style="font-size:11px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:4px 0;width:100%">▾ Preview</button>
-      <div id="preview-${s.id}" style="display:none;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);text-align:left">${previewHtml}</div>
+      <div class="scene-tile-btns">
+        <button onclick="event.stopPropagation();toggleFav('${s.id}',${!!s.favourite})" title="Favourite" style="opacity:${s.favourite ? 1 : 0.4}">${s.favourite ? '⭐' : '☆'}</button>
+        <button onclick="event.stopPropagation();openSceneModal('${s.id}')" title="Edit">✏️</button>
+        <button onclick="event.stopPropagation();deleteScene('${s.id}')" title="Delete">🗑️</button>
+      </div>
     </div>`
   }).join('');
 }
@@ -1768,6 +1768,7 @@ function renderSchedules() {
       <div class="empty-icon">⏰</div>
       <div class="empty-title">No schedules yet</div>
       <div class="empty-desc">Automate your lights with time-based or sun-based triggers.</div>
+      <button class="btn btn-primary" style="margin-top:14px" onclick="openScheduleModal()">+ New Schedule</button>
     </div>`;
     return;
   }
@@ -1781,7 +1782,11 @@ function renderSchedules() {
     const days = s.days || [0,1,2,3,4,5,6];
     const dayChips = DAY_LABELS.map((d,i) => `<div class="day-chip ${days.includes(i) ? 'active' : ''}">${d}</div>`).join('');
 
-    const action = s.actionType === 'allOff' ? 'Turn off all lights' : scene ? `→ ${scene.name}` : '→ (scene deleted)';
+    const action = s.actionType === 'allOff'
+      ? '🌙 Turn off all lights'
+      : scene
+        ? `${scene.icon || '✨'} ${esc(scene.name)}`
+        : '<span style="color:var(--red)">⚠️ No scene selected — edit to fix</span>';
 
     return `
       <div class="sched-card ${s.enabled ? '' : 'disabled'}">
@@ -1964,6 +1969,11 @@ function renderSettings() {
         </div>
       </div>
       <div class="form-row" style="margin-top:4px">
+        <label class="form-label">Timezone (for schedules & sunrise/sunset)</label>
+        <input id="set-timezone" class="form-input" list="tz-list" value="${esc(s.timezone || '')}" placeholder="e.g. Africa/Lagos">
+        <datalist id="tz-list"></datalist>
+      </div>
+      <div class="form-row" style="margin-top:4px">
         <label class="form-label">Alert if a light is on longer than (hours, 0 = off)</label>
         <input id="set-longon-hours" type="number" step="0.5" min="0" class="form-input" value="${s.longOnAlertHours || 0}">
       </div>
@@ -1989,6 +1999,11 @@ function renderSettings() {
     ${accordion('acc-system',    '⚙️', 'System',         systemHtml)}
   `;
   loadDevices();
+
+  const tzList = document.getElementById('tz-list');
+  if (tzList && typeof Intl.supportedValuesOf === 'function') {
+    tzList.innerHTML = Intl.supportedValuesOf('timeZone').map(z => `<option value="${z}">`).join('');
+  }
 
   // Re-attach toggles and restore open state (auto-open Floors & Rooms on first load)
   wrap.querySelectorAll('.accordion').forEach(acc => {
@@ -2075,7 +2090,8 @@ async function saveSettings() {
   const lat = parseFloat(document.getElementById('set-lat').value);
   const lon = parseFloat(document.getElementById('set-lon').value);
   const longOnAlertHours = parseFloat(document.getElementById('set-longon-hours').value) || 0;
-  const data = { ...state.settings, gatewayIp: ip, latitude: lat, longitude: lon, longOnAlertHours };
+  const timezone = document.getElementById('set-timezone').value.trim();
+  const data = { ...state.settings, gatewayIp: ip, latitude: lat, longitude: lon, longOnAlertHours, timezone };
   try {
     const updated = await API.put('/api/settings', data);
     state.settings = updated;
@@ -2648,6 +2664,10 @@ function setDays(preset) {
 async function saveSchedule() {
   const name = document.getElementById('sched-name').value.trim();
   if (!name) { toast('Please enter a schedule name', 'error'); return; }
+  if (_schedAction === 'scene' && !document.getElementById('sched-scene').value) {
+    toast('Please select a scene for this schedule', 'error');
+    return;
+  }
   const data = {
     name,
     enabled: true,
@@ -2707,14 +2727,6 @@ function esc(str) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Scene preview toggle
-// ═══════════════════════════════════════════════════════════════════════════
-function toggleScenePreview(id) {
-  const el = document.getElementById('preview-' + id);
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 //  Mode (Away / Home)
 // ═══════════════════════════════════════════════════════════════════════════
 function renderModeBar() {
@@ -2754,9 +2766,10 @@ function renderWhatsOn() {
     el.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:2px 0">Everything is off ✓</div>';
     return;
   }
+  // Single row: count label inline with the chips (chips jump to the room)
   el.innerHTML = `
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:6px">${active.length} device${active.length>1?'s':''} on</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3)">${active.length} on</span>
       ${active.map(({room,light}) => `
         <div onclick="selectRoom('${room.id}')" style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:20px;padding:3px 10px;font-size:12px;cursor:pointer">
           ${light.icon||room.icon||'💡'} <span>${esc(light.name)}</span>
@@ -2825,25 +2838,25 @@ function clientSunTimes(date, lat, lon) {
 function nextRunText(sched) {
   if (!sched.enabled) return 'Disabled';
   const now = new Date();
-  const nowMins = now.getHours() * 60 + now.getMinutes();
-  let targetMins;
+  let target; // Date of the next occurrence
   if (sched.triggerType === 'time' && sched.time) {
     const [h, m] = sched.time.split(':').map(Number);
-    targetMins = h * 60 + m;
+    target = new Date(now);
+    target.setHours(h, m, 0, 0);
   } else if (sched.triggerType === 'sunrise' || sched.triggerType === 'sunset') {
     const lat = state.settings.latitude || 40.7128;
     const lon = state.settings.longitude || -74.006;
     const { sunrise, sunset } = clientSunTimes(now, lat, lon);
     const base = sched.triggerType === 'sunrise' ? sunrise : sunset;
     if (base == null) return 'N/A';
-    targetMins = Math.round(base * 60) + (sched.offset || 0);
+    // clientSunTimes returns decimal hours UTC — anchor to today's UTC
+    // midnight and let Date handle the local-time conversion for display
+    const utcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    target = new Date(utcMidnight + (base * 60 + (sched.offset || 0)) * 60000);
   } else return '—';
-  const isToday = targetMins > nowMins;
-  const h = Math.floor(targetMins / 60) % 24;
-  const m = targetMins % 60;
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const displayH = h % 12 || 12;
-  const timeStr = `${displayH}:${String(m).padStart(2,'0')} ${suffix}`;
+  if (target <= now) target = new Date(target.getTime() + 86400000);
+  const timeStr = target.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const isToday = target.getDate() === now.getDate() && target.getMonth() === now.getMonth();
   return (isToday ? 'Today ' : 'Tomorrow ') + timeStr;
 }
 

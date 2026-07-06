@@ -632,10 +632,36 @@ function getCachedSunTimes(now) {
 
 setInterval(checkSchedules, 30000);
 
+// Wall-clock "now" in the home's configured timezone — schedule times are
+// entered as home wall-clock, and the NAS's own timezone may differ.
+function nowInTimezone(tz) {
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: tz, hour12: false, weekday: 'short', hour: '2-digit', minute: '2-digit',
+        }).formatToParts(new Date());
+        const get = t => parts.find(p => p.type === t)?.value;
+        const days = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+        const hour = Number(get('hour')) % 24; // some ICU builds emit "24" at midnight
+        return { minuteOfDay: hour * 60 + Number(get('minute')), day: days[get('weekday')] };
+    } catch {
+        const now = new Date(); // bad/missing timezone — fall back to server local
+        return { minuteOfDay: now.getHours() * 60 + now.getMinutes(), day: now.getDay() };
+    }
+}
+
+function tzOffsetMinutes(tz) {
+    try {
+        const now = new Date();
+        const utc = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+        const loc = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+        return Math.round((loc - utc) / 60000);
+    } catch { return -new Date().getTimezoneOffset(); }
+}
+
 async function checkSchedules() {
     const now = new Date();
-    const nowMinute = now.getHours() * 60 + now.getMinutes();
-    const day = now.getDay();
+    const tz = db.settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const { minuteOfDay: nowMinute, day } = nowInTimezone(tz);
 
     for (const sched of db.schedules) {
         if (!sched.enabled) continue;
@@ -652,8 +678,8 @@ async function checkSchedules() {
             if (base == null) continue;
             const offsetMins = sched.offset || 0;
             const hm = decimalHoursToHM(base + offsetMins / 60);
-            const utcOffset = -now.getTimezoneOffset();
-            targetMinute = ((hm.h * 60 + hm.m + utcOffset) + 1440) % 1440;
+            // Sun times are UTC — shift into the home timezone for comparison
+            targetMinute = ((hm.h * 60 + hm.m + tzOffsetMinutes(tz)) + 1440) % 1440;
         }
 
         if (targetMinute === null) continue;
@@ -1057,7 +1083,7 @@ const server = http.createServer(async (req, res) => {
                 } catch (e) { console.error('[FloorAllOff]', e.message); }
             }
             saveLightState();
-            logActivity('device', `All Off: floor "${floor.name}" (${count} devices)`, { floorId, floorName: floor.name, count });
+            logActivity('device', `All Off: floor "${floor.name}" (${count} device${count === 1 ? '' : 's'})`, { floorId, floorName: floor.name, count });
             return reply(res, 200, { ok: true, floor: floor.name, count });
         }
 
@@ -1188,6 +1214,8 @@ const server = http.createServer(async (req, res) => {
                     offset: body.offset || 0, days: body.days || [0,1,2,3,4,5,6],
                     actionType: body.actionType || 'scene', sceneId: body.sceneId || null,
                 };
+                if (sched.actionType === 'scene' && !sched.sceneId)
+                    return reply(res, 400, { error: 'A scene schedule needs a sceneId' });
                 db.schedules.push(sched);
                 saveDb('schedules');
                 return reply(res, 201, sched);
@@ -1204,7 +1232,10 @@ const server = http.createServer(async (req, res) => {
             if (method === 'PUT') {
                 const body = await parseBody(req);
                 if (idx === -1) return reply(res, 404, { error: 'Not found' });
-                db.schedules[idx] = { ...db.schedules[idx], ...body, id };
+                const merged = { ...db.schedules[idx], ...body, id };
+                if (merged.actionType === 'scene' && !merged.sceneId)
+                    return reply(res, 400, { error: 'A scene schedule needs a sceneId' });
+                db.schedules[idx] = merged;
                 saveDb('schedules');
                 return reply(res, 200, db.schedules[idx]);
             }
