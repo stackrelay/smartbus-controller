@@ -423,9 +423,14 @@ a { color: inherit; text-decoration: none; }
 .floor-group { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .floor-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(124,58,237,0.12); font-weight: 600; font-size: 13px; color: var(--accent-light, #a78bfa); }
 .floor-rooms { padding: 8px 12px 12px 20px; display: flex; flex-direction: column; gap: 8px; }
+.floor-group.collapsed .floor-rooms { display: none; }
 .room-group { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .room-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--card); font-size: 13px; font-weight: 600; }
 .room-devices { padding: 4px 12px 10px 24px; display: flex; flex-direction: column; gap: 4px; }
+.room-group.collapsed .room-devices { display: none; }
+.group-toggle-area { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; user-select: none; }
+.group-chevron { display: inline-block; font-size: 11px; color: var(--text-3); transition: transform var(--transition); flex-shrink: 0; }
+.floor-group.collapsed .group-chevron, .room-group.collapsed .group-chevron { transform: rotate(-90deg); }
 .device-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 8px; background: var(--surface); font-size: 12px; }
 .device-row-info { display: flex; align-items: center; gap: 8px; }
 .unassigned-rooms { margin-top: 4px; padding: 8px 12px; background: rgba(239,68,68,0.08); border: 1px dashed rgba(239,68,68,0.3); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-2); }
@@ -1815,6 +1820,15 @@ async function deleteSchedule(id) {
 function renderSettings() {
   const wrap = document.getElementById('settings-wrap');
 
+  // Capture collapse state from the current DOM before it's replaced. Floors
+  // default open (there are only ever a few); rooms default collapsed the
+  // first time they're rendered, since their device lists are what actually
+  // clutters the page — but once a user expands one, that choice is kept
+  // across re-renders (e.g. after adding a device).
+  const collapsedFloors = new Set([...wrap.querySelectorAll('.floor-group.collapsed')].map(el => el.dataset.floorId));
+  const collapsedRooms  = new Set([...wrap.querySelectorAll('.room-group.collapsed')].map(el => el.dataset.roomId));
+  const seenRooms       = new Set([...wrap.querySelectorAll('.room-group')].map(el => el.dataset.roomId));
+
   // ── Floors & Rooms hierarchy ──────────────────────────────────────────────
   const BAD = new Set([null, undefined, '', 'undefined', 'null', '0']);
   const validFloorId = r => r.floorId && !BAD.has(r.floorId) && state.floors.find(f => f.id === r.floorId);
@@ -1836,10 +1850,15 @@ function renderSettings() {
           </div>
         </div>
       `).join('');
+      const roomCollapsed = seenRooms.has(r.id) ? collapsedRooms.has(r.id) : true;
       return `
-        <div class="room-group">
+        <div class="room-group${roomCollapsed ? ' collapsed' : ''}" data-room-id="${r.id}">
           <div class="room-header">
-            <span>${r.icon || '🏠'} ${esc(r.name)}</span>
+            <div class="group-toggle-area" onclick="toggleRoomGroup('${r.id}')">
+              <span class="group-chevron">▾</span>
+              <span>${r.icon || '🏠'} ${esc(r.name)}</span>
+              <span style="color:var(--text-3);font-weight:400">(${(r.lights||[]).length})</span>
+            </div>
             <div style="display:flex;gap:4px">
               <button class="btn btn-icon btn-ghost btn-sm" onclick="openRoomModal('${r.id}')">✏️</button>
               <button class="btn btn-icon btn-danger btn-sm" onclick="deleteRoom('${r.id}')">🗑️</button>
@@ -1852,10 +1871,15 @@ function renderSettings() {
         </div>`;
     }).join('');
 
+    const floorCollapsed = collapsedFloors.has(floor.id);
     return `
-      <div class="floor-group">
+      <div class="floor-group${floorCollapsed ? ' collapsed' : ''}" data-floor-id="${floor.id}">
         <div class="floor-header">
-          <span>🏢 ${esc(floor.name)}</span>
+          <div class="group-toggle-area" onclick="toggleFloorGroup('${floor.id}')">
+            <span class="group-chevron">▾</span>
+            <span>🏢 ${esc(floor.name)}</span>
+            <span style="color:var(--text-3);font-weight:400">(${floorRooms.length})</span>
+          </div>
           <div style="display:flex;gap:4px">
             <button class="btn btn-icon btn-ghost btn-sm" onclick="openFloorModal('${floor.id}')">✏️</button>
             <button class="btn btn-icon btn-danger btn-sm" onclick="deleteFloor('${floor.id}')">🗑️</button>
@@ -2003,6 +2027,13 @@ function logoutDevice() {
     clearAuthToken();
     location.reload();
   });
+}
+
+function toggleFloorGroup(id) {
+  document.querySelector(`.floor-group[data-floor-id="${id}"]`)?.classList.toggle('collapsed');
+}
+function toggleRoomGroup(id) {
+  document.querySelector(`.room-group[data-room-id="${id}"]`)?.classList.toggle('collapsed');
 }
 
 function accordion(id, icon, title, body) {
