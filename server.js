@@ -13,19 +13,24 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 // ─── Network config ───────────────────────────────────────────────────────────
 let SMARTGATE_IP   = '192.168.1.100'; // ← change to your SmartGate IP
 let SMARTGATE_PORT = 6000;
-const SERVER_PORT  = 3002;
+const SERVER_PORT  = 3003;
 const LISTEN_IP    = '0.0.0.0';
 
 // ─── Protocol constants ───────────────────────────────────────────────────────
-// PREFIX is rebuilt dynamically so it stays in sync when settings change the IP
+const SMARTCLOUD_BUF = Buffer.from('SMARTCLOUD', 'ascii');
+const SYNC_BUF       = Buffer.from([0xAA, 0xAA]);
+const SMARTCLOUD_STR = Buffer.from('SMARTCLOUD', 'ascii'); // for UDP listener search
+
+// Cached prefix — rebuilt only when SMARTGATE_IP changes
+let cachedPrefix = null;
 function buildPrefix() {
-    const parts = SMARTGATE_IP.split('.').map(Number);
-    return Buffer.concat([
-        Buffer.from(parts),
-        Buffer.from('SMARTCLOUD', 'ascii'),
-        Buffer.from([0xAA, 0xAA]),
-    ]);
+    if (!cachedPrefix) {
+        const parts = SMARTGATE_IP.split('.').map(Number);
+        cachedPrefix = Buffer.concat([Buffer.from(parts), SMARTCLOUD_BUF, SYNC_BUF]);
+    }
+    return cachedPrefix;
 }
+function invalidatePrefix() { cachedPrefix = null; }
 
 const SENDER_SUBNET = 0x01;
 const SENDER_DEVICE = 0x32;         // 50
@@ -75,10 +80,41 @@ function sendPacket(buf) {
     });
 }
 
-// ─── Data layer ───────────────────────────────────────────────────────────────
-const DB_FILES = ['rooms', 'devices', 'scenes', 'schedules', 'settings'];
+// ─── Activity log (JSON file, no native dependencies) ────────────────────────
+const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.json');
+const ACTIVITY_MAX  = 500;
+let activityLog = [];
 
-let db = { rooms: [], devices: [], scenes: [], schedules: [], settings: {} };
+function loadActivity() {
+    ensureDataDir();
+    try {
+        if (fs.existsSync(ACTIVITY_FILE))
+            activityLog = JSON.parse(fs.readFileSync(ACTIVITY_FILE, 'utf8'));
+    } catch { activityLog = []; }
+}
+
+function saveActivity() {
+    try { fs.writeFileSync(ACTIVITY_FILE, JSON.stringify(activityLog)); } catch {}
+}
+
+// Debounced activity save — coalesces rapid writes into one disk operation
+let activitySaveTimer = null;
+function scheduleActivitySave() {
+    if (activitySaveTimer) return;
+    activitySaveTimer = setTimeout(() => { activitySaveTimer = null; saveActivity(); }, 500);
+}
+
+function logActivity(type, description, details) {
+    const now = Date.now();
+    activityLog.unshift({ id: now, ts: now, type, description, details: details || null });
+    if (activityLog.length > ACTIVITY_MAX) activityLog.length = ACTIVITY_MAX;
+    scheduleActivitySave();
+}
+
+// ─── Data layer ───────────────────────────────────────────────────────────────
+const DB_FILES = ['floors', 'rooms', 'devices', 'scenes', 'schedules', 'settings'];
+
+let db = { floors: [], rooms: [], devices: [], scenes: [], schedules: [], settings: {} };
 
 function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -98,24 +134,42 @@ function loadDb() {
             }
         } else {
             // Seed defaults
-            if (name === 'rooms') {
+            if (name === 'floors') {
+                db.floors = [{ id: 'default-floor-1', name: 'Ground Floor' }];
+            } else if (name === 'rooms') {
                 db.rooms = [{
                     id: 'default-room-1', name: 'Living Room', icon: '🛋️', color: '#7c3aed',
+                    floorId: 'default-floor-1',
                     lights: [{ id: 'default-light-1', name: 'Main Light', subnet: 1, device: 7, channel: 9, type: 'relay' }]
                 }];
             } else if (name === 'devices') {
                 db.devices = [{ id: 'default-device-1', name: 'Dimmer 1.7', subnet: 1, device: 7 }];
             } else if (name === 'settings') {
-                db.settings = { latitude: 40.7128, longitude: -74.006, timezone: 'America/New_York', gatewayIp: '192.168.1.100', gatewayPort: 6000 };
+                db.settings = {
+                    latitude: 40.7128, longitude: -74.006,
+                    timezone: 'America/New_York',
+                    gatewayIp: '192.168.1.100', gatewayPort: 6000,
+                    mode: 'home', homeSceneId: null, awaySceneId: null
+                };
             } else {
                 db[name] = [];
             }
             saveDb(name);
         }
     }
+    // Clean up any corrupted floorId values (e.g. the string "undefined"/"null")
+    const BAD_IDS = new Set(['undefined', 'null', '', '0']);
+    db.rooms = db.rooms.map(r => ({
+        ...r,
+        floorId: (r.floorId && !BAD_IDS.has(r.floorId)) ? r.floorId : null,
+    }));
+
+    // Ensure mode field exists in settings (Feature 3)
+    if (!db.settings.mode) db.settings.mode = 'home';
+
     // Sync gateway config from settings
-    if (db.settings.gatewayIp)   SMARTGATE_IP   = db.settings.gatewayIp;
-    if (db.settings.gatewayPort) SMARTGATE_PORT = db.settings.gatewayPort;
+    if (db.settings.gatewayIp)   { SMARTGATE_IP   = db.settings.gatewayIp;   invalidatePrefix(); }
+    if (db.settings.gatewayPort)   SMARTGATE_PORT = db.settings.gatewayPort;
 }
 
 function saveDb(name) {
@@ -127,12 +181,27 @@ function saveDb(name) {
 // ─── In-memory light state ────────────────────────────────────────────────────
 // Key: "subnet.device.channel"  Value: 0 or 100
 const lightState = {};
+const LIGHT_STATE_FILE = path.join(DATA_DIR, 'lightstate.json');
 
 function lightKey(subnet, device, channel) {
     return `${subnet}.${device}.${channel}`;
 }
 
+function saveLightState() {
+    try { fs.writeFileSync(LIGHT_STATE_FILE, JSON.stringify(lightState)); } catch (e) {}
+}
+
 function initLightState() {
+    // Load persisted state from last run
+    try {
+        if (fs.existsSync(LIGHT_STATE_FILE)) {
+            const saved = JSON.parse(fs.readFileSync(LIGHT_STATE_FILE, 'utf8'));
+            Object.assign(lightState, saved);
+            console.log(`[State] Restored ${Object.keys(saved).length} light states from disk`);
+        }
+    } catch (e) {}
+
+    // Ensure all known lights have an entry (default 0 if never seen)
     for (const room of db.rooms) {
         for (const light of (room.lights || [])) {
             const k = lightKey(light.subnet, light.device, light.channel);
@@ -141,11 +210,213 @@ function initLightState() {
     }
 }
 
+// Persist lightState every 60 seconds
+setInterval(saveLightState, 60000);
+
+// ─── SSE (Server-Sent Events) — real-time push to browser clients ────────────
+const sseClients = new Set();
+
+function broadcastEvent(event) {
+    if (sseClients.size === 0) return;
+    const msg = `data: ${JSON.stringify(event)}\n\n`;
+    for (const client of sseClients) {
+        try { client.write(msg); } catch { sseClients.delete(client); }
+    }
+}
+
 // ─── Light command ────────────────────────────────────────────────────────────
-async function lightCmd(subnet, device, channel, level) {
+async function lightCmd(subnet, device, channel, level, skipLog) {
     const pkt = buildDimmerPacket(Number(subnet), Number(device), Number(channel), Number(level));
     await sendPacket(pkt);
-    lightState[lightKey(subnet, device, channel)] = level;
+    const k = lightKey(subnet, device, channel);
+    const changed = lightState[k] !== level;
+    lightState[k] = level;
+    if (changed) saveLightState();
+    broadcastEvent({ type: 'lightState', key: k, level });
+    if (!skipLog) {
+        let devName = `${subnet}.${device} ch${channel}`;
+        for (const room of db.rooms) {
+            const l = (room.lights || []).find(l => l.subnet == subnet && l.device == device && l.channel == channel);
+            if (l) { devName = `${room.name} / ${l.name}`; break; }
+        }
+        logActivity('device', `${level > 0 ? 'ON' : 'OFF'}: ${devName}`, { subnet, device, channel, level });
+    }
+}
+
+// ─── Shared state update (used by UDP listener for both 0x0032 and 0x03CD) ───
+function updateLightState(subnet, device, channel, level, logChange) {
+    const k = lightKey(subnet, device, channel);
+    const prev = lightState[k];
+    lightState[k] = level;
+    if (prev !== level) {
+        saveLightState();
+        broadcastEvent({ type: 'lightState', key: k, level });
+    }
+    if (logChange && prev !== level) {
+        let devName = `${subnet}.${device} ch${channel}`;
+        for (const room of db.rooms) {
+            const l = (room.lights || []).find(l =>
+                l.subnet == subnet && l.device == device && l.channel == channel);
+            if (l) { devName = `${room.name} / ${l.name}`; break; }
+        }
+        console.log(`[UDP] State: ${devName} = ${level > 0 ? 'ON' : 'OFF'} (${level})`);
+        logActivity('device', `${level > 0 ? 'ON' : 'OFF'} (external): ${devName}`,
+            { subnet, device, channel, level });
+    }
+}
+
+// ─── UDP Listener ─────────────────────────────────────────────────────────────
+const SMARTCLOUD_PREFIX = 'SMARTCLOUD'; // kept for legacy reference
+
+// Build a 0x0033 "Read Status of Channels" packet — EMPTY payload (0 content bytes).
+// Device responds with 0x0034: [channel_count, ch1_level, ch2_level, ...]
+// This is fully read-only — does NOT change any device state.
+function buildReadStatusPacket(targetSubnet, targetDevice) {
+    const hdlNoCrc = Buffer.from([
+        0x0B,             // length = 11 (no content bytes)
+        SENDER_SUBNET, SENDER_DEVICE,
+        DEVICE_TYPE[0], DEVICE_TYPE[1],
+        0x00, 0x33,       // opcode: Read Status of Channels
+        targetSubnet, targetDevice,
+        // NO content bytes — empty payload per spec
+    ]);
+    const c = crc16(hdlNoCrc);
+    return Buffer.concat([buildPrefix(), hdlNoCrc, Buffer.from([(c >> 8) & 0xFF, c & 0xFF])]);
+}
+
+// Send 0x0033 to each unique device — read-only state query.
+// Each device responds with 0x0034 containing all its channel levels.
+async function queryDeviceStates() {
+    const deviceMap = new Map(); // "subnet.device" -> {subnet, device}
+    for (const room of db.rooms) {
+        for (const light of (room.lights || [])) {
+            const key = `${light.subnet}.${light.device}`;
+            if (!deviceMap.has(key)) deviceMap.set(key, light);
+        }
+    }
+    let count = 0;
+    for (const [, light] of deviceMap) {
+        try {
+            await sendPacket(buildReadStatusPacket(Number(light.subnet), Number(light.device)));
+            count++;
+            await new Promise(r => setTimeout(r, 200)); // 200ms between devices on startup query
+        } catch (e) { /* ignore */ }
+    }
+    if (count > 0) console.log(`[State] Sent 0x0033 read queries to ${count} devices`);
+}
+
+function startUdpListener() {
+    const listener = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+
+    // Error handler must be registered before bind
+    listener.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.warn('[UDP Listener] Port 6000 already in use — live state updates disabled');
+        } else {
+            console.warn('[UDP Listener] Error:', err.message);
+        }
+        try { listener.close(); } catch (e) {}
+    });
+
+    listener.on('message', (msg) => {
+        try {
+            // SMARTCLOUD_STR is a module-level constant — not recreated per message
+            let offset = -1;
+            for (let i = 0; i <= msg.length - SMARTCLOUD_STR.length; i++) {
+                if (msg.slice(i, i + SMARTCLOUD_STR.length).equals(SMARTCLOUD_STR)) {
+                    offset = i + SMARTCLOUD_STR.length + 2; // +2 skips 0xAA 0xAA
+                    break;
+                }
+            }
+            if (offset < 0 || msg.length < offset + 12) return;
+
+            const opcode = (msg[offset + 5] << 8) | msg[offset + 6];
+
+            if (opcode === 0x0032) {
+                // [channel, 0xF8=success/0xF5=fail, level, ...]
+                const subnet  = msg[offset + 1];
+                const device  = msg[offset + 2];
+                const channel = msg[offset + 9];  // content[0]
+                const success = msg[offset + 10]; // content[1]: 0xF8=ok, 0xF5=fail
+                const level   = msg[offset + 11]; // content[2]
+                if (success === 0xF5) {
+                    // Command failed — log it and broadcast alert
+                    let devName = `${subnet}.${device} ch${channel}`;
+                    for (const room of db.rooms) {
+                        const l = (room.lights || []).find(l =>
+                            l.subnet == subnet && l.device == device && l.channel == channel);
+                        if (l) { devName = `${room.name} / ${l.name}`; break; }
+                    }
+                    console.warn(`[UDP] Command FAILED for ${devName}`);
+                    logActivity('device', `FAILED: ${devName}`, { subnet, device, channel, success: false });
+                    broadcastEvent({ type: 'commandFailed', key: lightKey(subnet, device, channel), devName });
+                } else {
+                    updateLightState(subnet, device, channel, level, true);
+                }
+            }
+
+            // 0x0002: Scene activated from a physical wall panel
+            if (opcode === 0x0002) {
+                const subnet  = msg[offset + 1];
+                const device  = msg[offset + 2];
+                const area    = msg[offset + 9];  // content[0]
+                const sceneNo = msg[offset + 10]; // content[1]
+                const devName = `device ${subnet}.${device}`;
+                console.log(`[UDP] Wall panel scene: area=${area} scene=${sceneNo} from ${devName}`);
+                logActivity('scene', `Wall panel activated area ${area} scene ${sceneNo}`,
+                    { subnet, device, area, sceneNo, source: 'wall_panel' });
+                broadcastEvent({ type: 'wallPanelScene', subnet, device, area, sceneNo });
+            }
+
+            if (opcode === 0x0034) {
+                // Response to 0x0033 read query: [channel_count, ch1_level, ch2_level, ...]
+                const subnet = msg[offset + 1];
+                const device = msg[offset + 2];
+                const hdlLen = msg[offset + 0];
+                const contentStart = offset + 9;
+                const contentLen   = hdlLen - 11;
+                if (contentLen >= 1) {
+                    const chCount = msg[contentStart]; // first byte = channel count
+                    for (let i = 0; i < chCount && i < contentLen - 1; i++) {
+                        const level = msg[contentStart + 1 + i];
+                        if (level <= 100) updateLightState(subnet, device, i + 1, level, false);
+                    }
+                    console.log(`[UDP] 0x0034: read ${chCount} channels for device ${subnet}.${device}`);
+                }
+            }
+
+            if (opcode === 0x03CD) {
+                // Comprehensive channel status — triggered by 0x0031/0x0033 to a device
+                // Header format (confirmed): [01][senderSub][senderDev][typeHi][typeLo][10]
+                // Then 16 bytes of channel levels: [ch1_level][ch2_level]...[ch16_level]
+                const subnet = msg[offset + 1];
+                const device = msg[offset + 2];
+                const hdlLen = msg[offset + 0];
+                const contentLen = hdlLen - 11; // already excludes CRC
+                if (contentLen >= 7) {
+                    // Skip 6-byte header, take channel level bytes
+                    const channelData = msg.slice(offset + 9 + 6, offset + 9 + contentLen);
+                    let updated = 0;
+                    for (let i = 0; i < channelData.length; i++) {
+                        const level = channelData[i];
+                        if (level <= 100) {
+                            updateLightState(subnet, device, i + 1, level, false);
+                            updated++;
+                        }
+                    }
+                    if (updated > 0) console.log(`[UDP] 0x03CD: synced ${updated} channels for device ${subnet}.${device}`);
+                }
+            }
+        } catch (e) { /* ignore malformed packets */ }
+    });
+
+    // bind callback has NO error parameter — errors fire the 'error' event above
+    listener.bind(6000, '0.0.0.0', () => {
+        listener.setBroadcast(true);
+        console.log('[UDP Listener] Bound to port 6000 — listening for SmartGate broadcasts');
+        // Query all device states 2s after binding so listener is ready to capture responses
+        setTimeout(queryDeviceStates, 2000);
+    });
 }
 
 // ─── Sunrise/Sunset (Spencer algorithm, no npm) ──────────────────────────────
@@ -172,14 +443,27 @@ function decimalHoursToHM(h) {
 }
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
-const lastFiredMinute = {}; // scheduleId -> minute-of-day when last fired
+const lastFiredMinute = {};
+
+// Cache sun times per calendar date — only recalculated once per day
+let sunCache = { date: null, sunrise: null, sunset: null };
+function getCachedSunTimes(now) {
+    const dateStr = now.toDateString();
+    if (sunCache.date !== dateStr) {
+        const lat = db.settings.latitude || 40.7128;
+        const lon = db.settings.longitude || -74.006;
+        const t = sunTimes(now, lat, lon);
+        sunCache = { date: dateStr, sunrise: t.sunrise, sunset: t.sunset };
+    }
+    return sunCache;
+}
 
 setInterval(checkSchedules, 30000);
 
 async function checkSchedules() {
     const now = new Date();
     const nowMinute = now.getHours() * 60 + now.getMinutes();
-    const day = now.getDay(); // 0=Sun
+    const day = now.getDay();
 
     for (const sched of db.schedules) {
         if (!sched.enabled) continue;
@@ -191,29 +475,31 @@ async function checkSchedules() {
             const [hh, mm] = sched.time.split(':').map(Number);
             targetMinute = hh * 60 + mm;
         } else if (sched.triggerType === 'sunrise' || sched.triggerType === 'sunset') {
-            const lat = db.settings.latitude || 40.7128;
-            const lon = db.settings.longitude || -74.006;
-            const times = sunTimes(now, lat, lon);
-            const base = sched.triggerType === 'sunrise' ? times.sunrise : times.sunset;
+            const cached = getCachedSunTimes(now);
+            const base = sched.triggerType === 'sunrise' ? cached.sunrise : cached.sunset;
             if (base == null) continue;
             const offsetMins = sched.offset || 0;
             const hm = decimalHoursToHM(base + offsetMins / 60);
-            // Convert UTC to local: use timezone offset
-            const utcOffset = -now.getTimezoneOffset(); // minutes
+            const utcOffset = -now.getTimezoneOffset();
             targetMinute = ((hm.h * 60 + hm.m + utcOffset) + 1440) % 1440;
         }
 
         if (targetMinute === null) continue;
         if (nowMinute !== targetMinute) continue;
-        if (lastFiredMinute[sched.id] === nowMinute) continue;
 
-        lastFiredMinute[sched.id] = nowMinute;
+        // Key includes the date so the same schedule can fire on different days
+        const firedKey = `${now.toDateString()}:${nowMinute}`;
+        if (lastFiredMinute[sched.id] === firedKey) continue;
+        lastFiredMinute[sched.id] = firedKey;
 
         try {
             if (sched.actionType === 'scene' && sched.sceneId) {
                 await activateScene(sched.sceneId);
+                const scene = db.scenes.find(s => s.id === sched.sceneId);
+                logActivity('schedule', `Schedule fired: "${sched.name}"`, { sceneId: sched.sceneId, sceneName: scene?.name });
             } else if (sched.actionType === 'allOff') {
                 await allOff();
+                logActivity('schedule', `Schedule fired: "${sched.name}" — All Off`, { scheduleId: sched.id });
             }
             console.log(`[Scheduler] Fired schedule "${sched.name}" at minute ${nowMinute}`);
         } catch (e) {
@@ -222,22 +508,70 @@ async function checkSchedules() {
     }
 }
 
+// Timing between commands: no official minimum in S-BUS spec.
+// RS-485 bus at 9600 baud transmits ~30 bytes in ~25ms. 100ms is a safe margin.
+const CMD_DELAY_SAME_DEVICE = 100; // ms — multiple channels on same physical module
+const CMD_DELAY_DIFF_DEVICE =  50; // ms — commands to different physical modules
+
+function cmdDelay(prevSubnet, prevDevice, curSubnet, curDevice) {
+    if (prevSubnet === curSubnet && prevDevice === curDevice)
+        return CMD_DELAY_SAME_DEVICE;
+    return CMD_DELAY_DIFF_DEVICE;
+}
+
 async function activateScene(sceneId) {
     const scene = db.scenes.find(s => s.id === sceneId);
     if (!scene) return;
+    // Expand floor/room/device actions into individual light commands
+    const cmds = [];
     for (const action of (scene.actions || [])) {
-        await lightCmd(action.subnet, action.device, action.channel, action.level);
-        await new Promise(r => setTimeout(r, 60));
+        if (action.type === 'floor') {
+            const rooms = db.rooms.filter(r => r.floorId === action.floorId);
+            for (const room of rooms)
+                for (const l of (room.lights || []))
+                    cmds.push({ subnet: l.subnet, device: l.device, channel: l.channel, level: action.level });
+        } else if (action.type === 'room') {
+            const room = db.rooms.find(r => r.id === action.roomId);
+            if (room)
+                for (const l of (room.lights || []))
+                    cmds.push({ subnet: l.subnet, device: l.device, channel: l.channel, level: action.level });
+        } else {
+            cmds.push(action);
+        }
+    }
+    let prevSubnet = null, prevDevice = null;
+    for (const cmd of cmds) {
+        if (prevSubnet !== null) {
+            await new Promise(r => setTimeout(r, cmdDelay(prevSubnet, prevDevice, cmd.subnet, cmd.device)));
+        }
+        await lightCmd(cmd.subnet, cmd.device, cmd.channel, cmd.level, true);
+        prevSubnet = cmd.subnet;
+        prevDevice = cmd.device;
     }
 }
 
 async function allOff() {
-    for (const room of db.rooms) {
-        for (const light of (room.lights || [])) {
-            await lightCmd(light.subnet, light.device, light.channel, 0);
-            await new Promise(r => setTimeout(r, 60));
-        }
+    // Use channel 0xFF to turn off ALL channels on each device in one command
+    const devices = new Map();
+    for (const room of db.rooms)
+        for (const light of (room.lights || []))
+            devices.set(`${light.subnet}.${light.device}`, { subnet: light.subnet, device: light.device });
+
+    let prev = null;
+    for (const [, d] of devices) {
+        if (prev) await new Promise(r => setTimeout(r, CMD_DELAY_DIFF_DEVICE));
+        await sendPacket(buildDimmerPacket(Number(d.subnet), Number(d.device), 0xFF, 0));
+        // Update all known channels for this device
+        for (const room of db.rooms)
+            for (const light of (room.lights || []))
+                if (light.subnet == d.subnet && light.device == d.device) {
+                    const k = lightKey(light.subnet, light.device, light.channel);
+                    lightState[k] = 0;
+                    broadcastEvent({ type: 'lightState', key: k, level: 0 });
+                }
+        prev = d;
     }
+    saveLightState();
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -305,6 +639,25 @@ const server = http.createServer(async (req, res) => {
     // ── API routes ────────────────────────────────────────────────────────────
     if (p.startsWith('/api/')) {
 
+        // GET /api/events — SSE stream for real-time state updates
+        if (method === 'GET' && p === '/api/events') {
+            res.writeHead(200, {
+                'Content-Type':  'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection':    'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+            });
+            // Send current state immediately on connect
+            res.write(`data: ${JSON.stringify({ type: 'init', lightState })}\n\n`);
+            sseClients.add(res);
+            // Keepalive comment every 30s to prevent proxy timeouts
+            const hb = setInterval(() => {
+                try { res.write(': keepalive\n\n'); } catch { clearInterval(hb); sseClients.delete(res); }
+            }, 30000);
+            req.on('close', () => { clearInterval(hb); sseClients.delete(res); });
+            return; // keep connection open
+        }
+
         // GET /api/health
         if (method === 'GET' && p === '/api/health') {
             return reply(res, 200, { ok: true, uptime: process.uptime() });
@@ -313,6 +666,12 @@ const server = http.createServer(async (req, res) => {
         // GET /api/state
         if (method === 'GET' && p === '/api/state') {
             return reply(res, 200, lightState);
+        }
+
+        // POST /api/refresh — query all devices for current state
+        if (method === 'POST' && p === '/api/refresh') {
+            queryDeviceStates();
+            return reply(res, 200, { ok: true, message: 'State query sent' });
         }
 
         // POST /api/light
@@ -329,6 +688,105 @@ const server = http.createServer(async (req, res) => {
             } catch (err) {
                 return reply(res, 500, { ok: false, error: err.message });
             }
+        }
+
+        // ── MODE (Feature 3) ──────────────────────────────────────────────────
+        if (p === '/api/mode') {
+            if (method === 'GET') {
+                return reply(res, 200, {
+                    mode: db.settings.mode || 'home',
+                    homeSceneId: db.settings.homeSceneId || null,
+                    awaySceneId: db.settings.awaySceneId || null,
+                });
+            }
+            if (method === 'POST') {
+                const body = await parseBody(req);
+                const newMode = body.mode === 'away' ? 'away' : 'home';
+                const prevMode = db.settings.mode || 'home';
+                db.settings.mode = newMode;
+                saveDb('settings');
+                logActivity('mode', `Mode changed to ${newMode}`, { from: prevMode, to: newMode });
+                // Activate corresponding scene if configured
+                const sceneId = newMode === 'away' ? db.settings.awaySceneId : db.settings.homeSceneId;
+                if (sceneId) {
+                    try {
+                        await activateScene(sceneId);
+                        const scene = db.scenes.find(s => s.id === sceneId);
+                        logActivity('scene', `Scene activated (${newMode} mode): ${scene?.name || sceneId}`, { sceneId });
+                    } catch (e) {
+                        console.error('[Mode] Failed to activate scene:', e.message);
+                    }
+                }
+                return reply(res, 200, { mode: newMode, ok: true });
+            }
+        }
+
+        // ── ACTIVITY ──────────────────────────────────────────────────────────
+        if (method === 'GET' && p === '/api/activity') {
+            const limit = Math.min(parseInt(urlObj.searchParams.get('limit') || '50', 10), 500);
+            return reply(res, 200, activityLog.slice(0, limit));
+        }
+
+        // ── FLOORS ────────────────────────────────────────────────────────────
+        if (p === '/api/floors') {
+            if (method === 'GET') return reply(res, 200, db.floors);
+            if (method === 'POST') {
+                const body = await parseBody(req);
+                const floor = { id: newId(), name: body.name || 'New Floor' };
+                db.floors.push(floor);
+                saveDb('floors');
+                return reply(res, 201, floor);
+            }
+        }
+        const floorMatch = p.match(/^\/api\/floors\/([^/]+)$/);
+        if (floorMatch) {
+            const id = floorMatch[1];
+            if (method === 'PUT') {
+                const body = await parseBody(req);
+                const idx = db.floors.findIndex(f => f.id === id);
+                if (idx < 0) return reply(res, 404, { error: 'not found' });
+                db.floors[idx] = { ...db.floors[idx], ...body };
+                saveDb('floors');
+                return reply(res, 200, db.floors[idx]);
+            }
+            if (method === 'DELETE') {
+                db.floors = db.floors.filter(f => f.id !== id);
+                saveDb('floors');
+                return reply(res, 200, { ok: true });
+            }
+        }
+
+        // ── FLOOR ALL-OFF (Feature 10) ────────────────────────────────────────
+        const floorAllOff = p.match(/^\/api\/floor\/([^/]+)\/alloff$/);
+        if (floorAllOff && method === 'POST') {
+            const floorId = floorAllOff[1];
+            const floor = db.floors.find(f => f.id === floorId);
+            if (!floor) return reply(res, 404, { error: 'Floor not found' });
+            const floorRooms = db.rooms.filter(r => r.floorId === floorId);
+            // Use 0xFF to turn off all channels per device in one command
+            const floorDevices = new Map();
+            for (const room of floorRooms)
+                for (const light of (room.lights || []))
+                    floorDevices.set(`${light.subnet}.${light.device}`, { subnet: light.subnet, device: light.device });
+
+            let count = 0, prev = null;
+            for (const [, d] of floorDevices) {
+                try {
+                    if (prev) await new Promise(r => setTimeout(r, CMD_DELAY_DIFF_DEVICE));
+                    await sendPacket(buildDimmerPacket(Number(d.subnet), Number(d.device), 0xFF, 0));
+                    for (const room of floorRooms)
+                        for (const light of (room.lights || []))
+                            if (light.subnet == d.subnet && light.device == d.device) {
+                                const k = lightKey(light.subnet, light.device, light.channel);
+                                lightState[k] = 0;
+                                broadcastEvent({ type: 'lightState', key: k, level: 0 });
+                            }
+                    prev = d; count++;
+                } catch (e) { console.error('[FloorAllOff]', e.message); }
+            }
+            saveLightState();
+            logActivity('device', `All Off: floor "${floor.name}" (${count} devices)`, { floorId, floorName: floor.name, count });
+            return reply(res, 200, { ok: true, floor: floor.name, count });
         }
 
         // ── ROOMS ─────────────────────────────────────────────────────────────
@@ -418,6 +876,7 @@ const server = http.createServer(async (req, res) => {
             if (!scene) return reply(res, 404, { error: 'Scene not found' });
             try {
                 await activateScene(id);
+                logActivity('scene', `Scene activated: "${scene.name}"`, { sceneId: id });
                 return reply(res, 200, { ok: true, activated: id });
             } catch (err) {
                 return reply(res, 500, { ok: false, error: err.message });
@@ -491,8 +950,8 @@ const server = http.createServer(async (req, res) => {
             if (method === 'PUT') {
                 const body = await parseBody(req);
                 db.settings = { ...db.settings, ...body };
-                if (db.settings.gatewayIp)   SMARTGATE_IP   = db.settings.gatewayIp;
-                if (db.settings.gatewayPort) SMARTGATE_PORT = db.settings.gatewayPort;
+                if (db.settings.gatewayIp)   { SMARTGATE_IP   = db.settings.gatewayIp; invalidatePrefix(); }
+                if (db.settings.gatewayPort)   SMARTGATE_PORT = db.settings.gatewayPort;
                 saveDb('settings');
                 return reply(res, 200, db.settings);
             }
@@ -514,7 +973,12 @@ const server = http.createServer(async (req, res) => {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadDb();
+loadActivity();
 initLightState();
+startUdpListener();
+
+// Refresh device states every 5 minutes in case something changed externally
+setInterval(queryDeviceStates, 5 * 60 * 1000);
 
 server.listen(SERVER_PORT, LISTEN_IP, () => {
     console.log(`Smart-Bus G4 server on http://localhost:${SERVER_PORT}`);

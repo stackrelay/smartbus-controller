@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Dark background -->
+  <rect width="512" height="512" rx="80" fill="#0a0a12"/>
+  <!-- House outline -->
+  <path d="M256 80 L100 220 L130 220 L130 400 L220 400 L220 300 L292 300 L292 400 L382 400 L382 220 L412 220 Z"
+        fill="none" stroke="#7c3aed" stroke-width="20" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Lightning bolt inside house -->
+  <path d="M272 180 L232 272 L258 272 L240 332 L288 240 L262 240 Z"
+        fill="#7c3aed" opacity="0.9"/>
+  <!-- Glow effect on bolt -->
+  <path d="M272 180 L232 272 L258 272 L240 332 L288 240 L262 240 Z"
+        fill="none" stroke="#a78bfa" stroke-width="3" opacity="0.6"/>
+</svg>

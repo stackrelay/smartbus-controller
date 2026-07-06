@@ -2,8 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Smart-Bus G4</title>
+<script>
+// Catch any JS errors and show them visibly for debugging
+window.onerror = function(msg, src, line, col, err) {
+  var d = document.getElementById('debug-error');
+  if (!d) { d = document.createElement('div'); d.id='debug-error'; d.style='position:fixed;top:0;left:0;right:0;background:red;color:#fff;padding:8px;font-size:12px;z-index:99999;word-break:break-all'; document.body && document.body.appendChild(d); }
+  d.textContent = 'JS ERROR: ' + msg + ' (line ' + line + ')';
+  return false;
+};
+</script>
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SmartBus">
+<meta name="theme-color" content="#7c3aed">
+<link rel="apple-touch-icon" href="/icon.svg">
 <style>
 /* ── Reset & Tokens ─────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -193,9 +208,15 @@ a { color: inherit; text-decoration: none; }
 .btn-sm { padding: 6px 12px; font-size: 12px; }
 
 /* ── Room pills ─────────────────────────────────────────────────────────── */
+.room-floors { padding: 0 32px 4px; }
+.room-floor-group { margin-bottom: 16px; }
+.room-floor-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-3);
+  margin-bottom: 8px; padding-left: 2px;
+}
 .room-pills {
   display: flex; gap: 8px; flex-wrap: wrap;
-  padding: 0 32px 20px;
   align-items: center;
 }
 .room-pill {
@@ -216,7 +237,7 @@ a { color: inherit; text-decoration: none; }
 .room-pill-add:hover { color: var(--accent); border-color: var(--accent); }
 
 @media (max-width: 767px) {
-  .room-pills { padding: 0 16px 16px; }
+  .room-floors { padding: 0 16px 4px; }
 }
 
 /* ── Room content ───────────────────────────────────────────────────────── */
@@ -238,8 +259,49 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 14px;
 }
+/* ── Tablet ───────────────────────────────────────────────────────────── */
+@media (min-width: 481px) and (max-width: 1024px) {
+  .lights-grid { grid-template-columns: repeat(2, 1fr); }
+  .scenes-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Toggle switch (all screen sizes) ───────────────────────────────── */
+.light-switch {
+  width: 40px; height: 22px; border-radius: 11px;
+  background: var(--surface); border: 1px solid var(--border);
+  position: relative; cursor: pointer; flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s;
+}
+.light-switch.on { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 8px rgba(245,158,11,0.4); }
+.light-switch-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--text-3); position: absolute; top: 2px; left: 2px;
+  transition: transform 0.2s, background 0.2s;
+}
+.light-switch.on .light-switch-thumb { transform: translateX(18px); background: #fff; }
+
+/* ── Mobile (iPhone) — 2-column compact grid ────────────────────────── */
 @media (max-width: 767px) {
-  .lights-grid { grid-template-columns: 1fr; }
+  .lights-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0; }
+  .light-card {
+    display: flex; align-items: center;
+    padding: 8px 10px; gap: 8px;
+    min-height: unset; height: 44px;
+  }
+  .light-card::before { display: none; }
+  .light-card-top { display: contents; }
+  .light-icon { width: 24px; height: 24px; font-size: 14px; flex-shrink: 0; margin-bottom: 0; border-radius: 6px; }
+  .light-name { flex: 1; font-size: 12px; font-weight: 600; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .light-meta { display: none; }
+  .light-status { display: none; }
+  .light-toggle { display: none; }
+  .room-content { padding: 0 12px 16px; }
+  .room-header { padding: 8px 12px; }
+  .room-header-title { font-size: 14px; }
+  .section-header { padding: 10px 12px 0; margin-bottom: 8px; }
+  .room-floors { padding: 0 12px 4px; }
+  .room-floor-label { font-size: 10px; }
+  .scenes-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 .light-card {
@@ -297,6 +359,19 @@ a { color: inherit; text-decoration: none; }
 }
 .light-card.on .light-toggle { background: var(--amber); border-color: var(--amber); color: #000; box-shadow: 0 0 16px rgba(245,158,11,0.4); }
 .light-toggle:hover { opacity: 0.85; }
+
+/* ── Floor / Room hierarchy in Settings ─────────────────────────────────── */
+.floor-group { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.floor-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(124,58,237,0.12); font-weight: 600; font-size: 13px; color: var(--accent-light, #a78bfa); }
+.floor-rooms { padding: 8px 12px 12px 20px; display: flex; flex-direction: column; gap: 8px; }
+.room-group { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.room-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--card); font-size: 13px; font-weight: 600; }
+.room-devices { padding: 4px 12px 10px 24px; display: flex; flex-direction: column; gap: 4px; }
+.device-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 8px; background: var(--surface); font-size: 12px; }
+.device-row-info { display: flex; align-items: center; gap: 8px; }
+.unassigned-rooms { margin-top: 4px; padding: 8px 12px; background: rgba(239,68,68,0.08); border: 1px dashed rgba(239,68,68,0.3); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-2); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Icon picker ─────────────────────────────────────────────────────────── */
 .icon-picker { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; margin-top: 8px; }
@@ -706,6 +781,9 @@ select.form-input { cursor: pointer; }
       <button class="nav-item" data-tab="settings">
         <span class="nav-icon">⚙️</span> Settings
       </button>
+      <button class="nav-item" data-tab="activity">
+        <span class="nav-icon">📋</span> Activity
+      </button>
     </div>
     <div class="sidebar-footer">
       <span class="status-dot"></span>Connected
@@ -721,8 +799,21 @@ select.form-input { cursor: pointer; }
           <div class="section-title">Rooms</div>
           <div class="section-subtitle" id="rooms-subtitle">Loading…</div>
         </div>
+        <button onclick="refreshState()" id="refresh-btn" title="Refresh device states" style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:16px;color:var(--text-2);transition:all 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">↻</button>
       </div>
-      <div class="room-pills" id="room-pills"></div>
+      <!-- Mode toggle -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 24px 8px">
+        <span style="font-size:12px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Presence</span>
+        <div style="display:flex;gap:6px">
+          <button id="mode-home-btn" onclick="setMode('home')" style="padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text-2);font-size:12px;cursor:pointer;transition:all 0.2s">🏠 Home</button>
+          <button id="mode-away-btn" onclick="setMode('away')" style="padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text-2);font-size:12px;cursor:pointer;transition:all 0.2s">🌙 Away</button>
+        </div>
+      </div>
+      <!-- What's On -->
+      <div id="whats-on" style="padding:0 24px;margin-bottom:8px"></div>
+      <!-- Quick Scenes (favourites) -->
+      <div id="quick-scenes" style="padding:0 24px;margin-bottom:4px"></div>
+      <div class="room-floors" id="room-floors"></div>
       <div class="room-content" id="room-content"></div>
     </section>
 
@@ -760,6 +851,17 @@ select.form-input { cursor: pointer; }
       </div>
       <div class="settings-wrap" id="settings-wrap"></div>
     </section>
+
+    <!-- ACTIVITY -->
+    <section id="sec-activity" class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Activity</div>
+          <div class="section-subtitle" id="activity-subtitle">Recent events</div>
+        </div>
+      </div>
+      <div id="activity-list" style="padding:0 24px 32px"></div>
+    </section>
   </main>
 </div>
 
@@ -769,13 +871,28 @@ select.form-input { cursor: pointer; }
   <button class="tab-btn" data-tab="scenes"><span class="tab-icon">✨</span>Scenes</button>
   <button class="tab-btn" data-tab="schedules"><span class="tab-icon">⏰</span>Schedules</button>
   <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span>Settings</button>
+  <button class="tab-btn" data-tab="activity"><span class="tab-icon">📋</span>Activity</button>
 </nav>
 
 <!-- Modals -->
+<div id="modal-floor" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title"><span id="modal-floor-title">Add Floor</span><button class="modal-close" onclick="closeModal('modal-floor')">✕</button></div>
+    <div class="form-row"><label class="form-label">Name</label><input id="floor-name" class="form-input" placeholder="e.g. Ground Floor, First Floor…"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-floor')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveFloor()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-room" class="modal-backdrop">
   <div class="modal">
     <div class="modal-title"><span id="modal-room-title">Add Room</span><button class="modal-close" onclick="closeModal('modal-room')">✕</button></div>
     <div class="form-row"><label class="form-label">Name</label><input id="room-name" class="form-input" placeholder="e.g. Living Room"></div>
+    <div class="form-row" style="margin-top:12px"><label class="form-label">Floor</label>
+      <select id="room-floor" class="form-input"></select>
+    </div>
     <div class="form-row" style="margin-top:16px"><label class="form-label">Icon</label>
       <div class="emoji-grid" id="room-icon-grid"></div>
     </div>
@@ -827,8 +944,25 @@ select.form-input { cursor: pointer; }
       <div class="form-row"><label class="form-label">Channel</label><input id="light-channel" type="number" class="form-input" value="1" min="1"></div>
       <div class="form-row"><label class="form-label">Type</label>
         <select id="light-type" class="form-input">
-          <option value="relay">Relay (on/off)</option>
-          <option value="dimmer">Dimmer</option>
+          <optgroup label="Lighting">
+            <option value="relay">Light — Relay (on/off)</option>
+            <option value="dimmer">Light — Dimmer</option>
+          </optgroup>
+          <optgroup label="Climate">
+            <option value="ac">Air Conditioner</option>
+            <option value="heater">Heater</option>
+            <option value="fan">Fan / Ventilation</option>
+          </optgroup>
+          <optgroup label="Water">
+            <option value="water-heater">Water Heater</option>
+            <option value="pump">Water Pump</option>
+          </optgroup>
+          <optgroup label="Appliances">
+            <option value="tv">TV / Entertainment</option>
+            <option value="socket">Power Socket</option>
+            <option value="gate">Gate / Door</option>
+            <option value="other">Other</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -849,23 +983,51 @@ select.form-input { cursor: pointer; }
     <div class="form-row" style="margin-top:16px">
       <label class="form-label">Actions</label>
       <div class="actions-list" id="scene-actions-list"></div>
-      <button class="btn btn-ghost btn-sm" onclick="openLightPicker()" style="margin-top:8px">+ Add Light Action</button>
+      <button class="btn btn-ghost btn-sm" onclick="openLightPicker()" style="margin-top:8px">+ Add Action</button>
       <div id="light-picker" class="sub-picker" style="display:none">
-        <div class="sub-picker-step active" id="picker-step-room">
-          <div class="form-label">Select Room</div>
+
+        <!-- Step 1: scope -->
+        <div class="sub-picker-step active" id="picker-step-scope">
+          <div class="form-label" style="margin-bottom:8px">What do you want to control?</div>
+          <div class="picker-options">
+            <div class="picker-option" onclick="pickerSelectScope('floor')">🏢 Entire Floor</div>
+            <div class="picker-option" onclick="pickerSelectScope('room')">🏠 Entire Room</div>
+            <div class="picker-option" onclick="pickerSelectScope('device')">💡 Individual Device</div>
+          </div>
+        </div>
+
+        <!-- Step 2a: floor list -->
+        <div class="sub-picker-step" id="picker-step-floor">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <button class="btn btn-ghost btn-sm" onclick="showPickerStep('scope')">← Back</button>
+            <span class="form-label">Select Floor</span>
+          </div>
+          <div class="picker-options" id="picker-floors"></div>
+        </div>
+
+        <!-- Step 2b: room list (for room scope OR device scope step 1) -->
+        <div class="sub-picker-step" id="picker-step-room">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <button class="btn btn-ghost btn-sm" id="picker-room-back-btn" onclick="showPickerStep('scope')">← Back</button>
+            <span class="form-label" id="picker-room-label">Select Room</span>
+          </div>
           <div class="picker-options" id="picker-rooms"></div>
         </div>
+
+        <!-- Step 2c: device list (device scope only) -->
         <div class="sub-picker-step" id="picker-step-light">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <button class="btn btn-ghost btn-sm" onclick="pickerBack('room')">← Back</button>
-            <span class="form-label">Select Light</span>
+            <button class="btn btn-ghost btn-sm" onclick="showPickerStep('room')">← Back</button>
+            <span class="form-label">Select Device</span>
           </div>
           <div class="picker-options" id="picker-lights"></div>
         </div>
+
+        <!-- Step 3: level -->
         <div class="sub-picker-step" id="picker-step-level">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <button class="btn btn-ghost btn-sm" onclick="pickerBack('light')">← Back</button>
-            <span class="form-label">On or Off?</span>
+            <button class="btn btn-ghost btn-sm" id="picker-level-back-btn" onclick="showPickerStep('light')">← Back</button>
+            <span class="form-label" id="picker-level-label">On or Off?</span>
           </div>
           <div class="level-toggle">
             <button class="level-btn on active" id="level-on" onclick="setPickerLevel(100)">ON</button>
@@ -873,6 +1035,7 @@ select.form-input { cursor: pointer; }
           </div>
           <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="addPickerAction()">Add Action</button>
         </div>
+
       </div>
     </div>
     <div class="modal-actions">
@@ -957,25 +1120,41 @@ const API = {
 //  State
 // ═══════════════════════════════════════════════════════════════════════════
 const state = {
-  rooms: [], devices: [], scenes: [], schedules: [], settings: {}, lightState: {},
-  activeTab: 'rooms', activeRoomId: null,
+  floors: [], rooms: [], devices: [], scenes: [], schedules: [], settings: {}, lightState: {},
+  activeTab: 'rooms', activeRoomId: null, mode: 'home',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Init & data loading
 // ═══════════════════════════════════════════════════════════════════════════
+async function safeGet(url, fallback) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return fallback;
+    return await r.json();
+  } catch { return fallback; }
+}
+
 async function loadAll() {
   try {
-    const [rooms, devices, scenes, schedules, settings, ls] = await Promise.all([
-      API.get('/api/rooms'), API.get('/api/devices'), API.get('/api/scenes'),
-      API.get('/api/schedules'), API.get('/api/settings'), API.get('/api/state'),
+    const [floors, rooms, devices, scenes, schedules, settings, ls, modeData] = await Promise.all([
+      safeGet('/api/floors',    []),
+      safeGet('/api/rooms',     []),
+      safeGet('/api/devices',   []),
+      safeGet('/api/scenes',    []),
+      safeGet('/api/schedules', []),
+      safeGet('/api/settings',  {}),
+      safeGet('/api/state',     {}),
+      safeGet('/api/mode',      {}),
     ]);
-    state.rooms     = rooms     || [];
-    state.devices   = devices   || [];
-    state.scenes    = scenes    || [];
-    state.schedules = schedules || [];
+    state.floors    = Array.isArray(floors)    ? floors    : [];
+    state.rooms     = Array.isArray(rooms)     ? rooms     : [];
+    state.devices   = Array.isArray(devices)   ? devices   : [];
+    state.scenes    = Array.isArray(scenes)    ? scenes    : [];
+    state.schedules = Array.isArray(schedules) ? schedules : [];
     state.settings  = settings  || {};
     state.lightState = ls || {};
+    state.mode      = modeData?.mode || 'home';
     if (!state.activeRoomId && state.rooms.length) state.activeRoomId = state.rooms[0].id;
     renderAll();
   } catch(e) {
@@ -983,21 +1162,70 @@ async function loadAll() {
   }
 }
 
+// ── SSE — real-time state updates (replaces 5-second polling) ────────────────
+let sseConnection = null;
+
+function connectSSE() {
+  if (sseConnection) sseConnection.close();
+  sseConnection = new EventSource('/api/events');
+
+  sseConnection.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'init') {
+        state.lightState = msg.lightState || {};
+        renderRooms(); renderWhatsOn();
+      } else if (msg.type === 'lightState') {
+        state.lightState[msg.key] = msg.level;
+        // Update the specific card without full re-render
+        const card = document.getElementById(`lcard-${msg.key}`);
+        if (card) {
+          const on = msg.level > 0;
+          card.className = `light-card ${on ? 'on' : ''}`;
+          const sw = card.querySelector('.light-switch');
+          if (sw) sw.className = `light-switch ${on ? 'on' : ''}`;
+          const ico = card.querySelector('.light-icon');
+          // Icon set at render time — no update needed on state change
+        }
+        renderWhatsOn();
+        renderRooms(); // update badges
+      } else if (msg.type === 'commandFailed') {
+        toast(`⚠️ Command failed: ${msg.devName}`, 'error');
+        if (state.activeTab === 'activity') renderActivity();
+      } else if (msg.type === 'wallPanelScene') {
+        toast(`🔘 Wall panel: area ${msg.area} scene ${msg.sceneNo}`);
+        if (state.activeTab === 'activity') renderActivity();
+      }
+    } catch(e) {}
+  };
+
+  sseConnection.onerror = () => {
+    // Fallback to polling if SSE fails
+    setTimeout(connectSSE, 5000);
+  };
+}
+
+// Fallback poll — only used if SSE is disconnected
 async function pollState() {
+  if (sseConnection && sseConnection.readyState === EventSource.OPEN) return;
   try {
     const ls = await API.get('/api/state');
     state.lightState = ls || {};
-    renderRoomContent();
+    renderRoomContent(); renderWhatsOn(); renderRooms();
   } catch(e) {}
 }
 
-setInterval(pollState, 5000);
+setInterval(pollState, 10000); // fallback only
+setInterval(() => { if (state.activeTab === 'activity') renderActivity(); }, 30000);
 
 function renderAll() {
   renderRooms();
   renderScenes();
   renderSchedules();
   renderSettings();
+  renderWhatsOn();
+  renderQuickScenes();
+  renderModeBar();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1009,6 +1237,7 @@ function switchTab(tab) {
   document.getElementById(`sec-${tab}`).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  if (tab === 'activity') renderActivity();
 }
 
 document.querySelectorAll('[data-tab]').forEach(el => {
@@ -1018,18 +1247,57 @@ document.querySelectorAll('[data-tab]').forEach(el => {
 // ═══════════════════════════════════════════════════════════════════════════
 //  ROOMS
 // ═══════════════════════════════════════════════════════════════════════════
+function roomPill(r) {
+  const active = r.id === state.activeRoomId;
+  const style = active && r.color ? `background:${r.color};border-color:${r.color}` : '';
+  const onCount = (r.lights||[]).filter(l => (state.lightState[lk(l)]||0) > 0).length;
+  const badge = onCount > 0
+    ? `<span style="display:inline-flex;align-items:center;justify-content:center;background:var(--amber);color:#000;border-radius:99px;font-size:10px;font-weight:700;min-width:16px;height:16px;padding:0 3px;margin-left:4px">${onCount}</span>`
+    : '';
+  return `<button class="room-pill ${active ? 'active' : ''}" onclick="selectRoom('${r.id}')" style="${style}">${r.icon || '💡'} ${esc(r.name)}${badge}</button>`;
+}
+
 function renderRooms() {
-  const pills = document.getElementById('room-pills');
+  const wrap = document.getElementById('room-floors');
   const totalLights = state.rooms.reduce((s,r) => s + (r.lights||[]).length, 0);
   document.getElementById('rooms-subtitle').textContent = `${state.rooms.length} rooms · ${totalLights} devices`;
 
-  pills.innerHTML = state.rooms.map(r => `
-    <button class="room-pill ${r.id === state.activeRoomId ? 'active' : ''}"
-      onclick="selectRoom('${r.id}')"
-      style="${r.id === state.activeRoomId && r.color ? `background:${r.color};border-color:${r.color}` : ''}">
-      ${r.icon || '💡'} ${esc(r.name)}
-    </button>
-  `).join('') + `<button class="room-pill room-pill-add" onclick="openRoomModal()">+ Add Room</button>`;
+  const BAD = new Set([null, undefined, '', 'undefined', 'null', '0']);
+  const validFid = r => r.floorId && !BAD.has(r.floorId) && state.floors.find(f => f.id === r.floorId);
+
+  let html = '';
+
+  if (state.floors.length > 0) {
+    // Render each floor with its rooms
+    state.floors.forEach(floor => {
+      const rooms = state.rooms.filter(r => validFid(r) && r.floorId === floor.id);
+      if (rooms.length === 0) return; // skip empty floors on home screen
+      html += `
+        <div class="room-floor-group">
+          <div class="room-floor-label" style="display:flex;align-items:center;justify-content:space-between">
+            <span>🏢 ${esc(floor.name)}</span>
+            <button onclick="floorAllOff('${floor.id}')" style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-3);cursor:pointer;line-height:1.4">All Off</button>
+          </div>
+          <div class="room-pills">${rooms.map(roomPill).join('')}</div>
+        </div>`;
+    });
+
+    // Unassigned rooms
+    const unassigned = state.rooms.filter(r => !validFid(r));
+    if (unassigned.length > 0) {
+      html += `
+        <div class="room-floor-group">
+          <div class="room-floor-label">Other</div>
+          <div class="room-pills">${unassigned.map(roomPill).join('')}</div>
+        </div>`;
+    }
+  } else {
+    // No floors defined — show flat pill list
+    html = `<div class="room-floor-group"><div class="room-pills">${state.rooms.map(roomPill).join('')}</div></div>`;
+  }
+
+  html += `<div style="padding-top:4px"><button class="room-pill room-pill-add" onclick="openRoomModal()">+ Add Room</button></div>`;
+  wrap.innerHTML = html;
 
   renderRoomContent();
 }
@@ -1069,14 +1337,17 @@ function renderLightCard(light) {
   const lvl = state.lightState[lk(light)] || 0;
   const on = lvl > 0;
   return `
-    <div class="light-card ${on ? 'on' : ''}" id="lcard-${lk(light)}">
+    <div class="light-card ${on ? 'on' : ''}" id="lcard-${lk(light)}" onclick="toggleLight(${light.subnet},${light.device},${light.channel},${lvl})" style="cursor:pointer">
       <div class="light-card-top">
         <div class="light-icon">${light.icon || (on ? '💡' : '🔦')}</div>
         <span class="light-status">${on ? 'ON' : 'OFF'}</span>
       </div>
       <div class="light-name">${esc(light.name)}</div>
       <div class="light-meta">${light.subnet}.${light.device} ch${light.channel} · ${light.type || 'relay'}</div>
-      <button class="light-toggle" onclick="toggleLight(${light.subnet},${light.device},${light.channel},${lvl})">
+      <div class="light-switch ${on ? 'on' : ''}">
+        <div class="light-switch-thumb"></div>
+      </div>
+      <button class="light-toggle" onclick="event.stopPropagation();toggleLight(${light.subnet},${light.device},${light.channel},${lvl})">
         ${on ? 'Turn Off' : 'Turn On'}
       </button>
     </div>
@@ -1130,18 +1401,38 @@ function renderScenes() {
     </div>`;
     return;
   }
-  grid.innerHTML = state.scenes.map(s => `
-    <div class="scene-card" id="scard-${s.id}">
+  grid.innerHTML = state.scenes.map(s => {
+    const previewHtml = (s.actions||[]).map(a => {
+      let lbl;
+      if (a.type === 'floor') {
+        const f = state.floors.find(x => x.id === a.floorId);
+        lbl = '🏢 ' + esc(f ? f.name : 'Floor');
+      } else if (a.type === 'room') {
+        const r = state.rooms.find(x => x.id === a.roomId);
+        lbl = (r ? r.icon : '🏠') + ' ' + esc(r ? r.name : 'Room');
+      } else {
+        const r = state.rooms.find(r2 => (r2.lights||[]).some(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel));
+        const l = r ? (r.lights||[]).find(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel) : null;
+        lbl = l ? (l.icon||'💡') + ' ' + esc(l.name) : esc(a.label || `${a.subnet}.${a.device} ch${a.channel}`);
+      }
+      return `<div style="padding:2px 0;font-size:12px">${lbl} → <span style="color:${a.level>0?'var(--amber)':'var(--text-3)'};font-weight:600">${a.level>0?'ON':'OFF'}</span></div>`;
+    }).join('') || '<div style="color:var(--text-3);font-size:12px">No actions</div>';
+
+    return `
+    <div class="scene-card" id="scard-${s.id}" style="position:relative">
+      <button onclick="toggleFav('${s.id}',${!!s.favourite})" title="Favourite" style="position:absolute;top:8px;left:8px;background:none;border:none;cursor:pointer;font-size:15px;opacity:${s.favourite?1:0.35};line-height:1">${s.favourite?'⭐':'☆'}</button>
       <div class="scene-card-actions">
         <button class="btn btn-icon btn-ghost" onclick="openSceneModal('${s.id}')" title="Edit">✏️</button>
         <button class="btn btn-icon btn-danger" onclick="deleteScene('${s.id}')" title="Delete">🗑️</button>
       </div>
       <span class="scene-icon">${s.icon || '✨'}</span>
       <div class="scene-name">${esc(s.name)}</div>
-      <div class="scene-meta">${(s.actions||[]).length} light action${(s.actions||[]).length !== 1 ? 's' : ''}</div>
+      <div class="scene-meta">${(s.actions||[]).length} action${(s.actions||[]).length !== 1 ? 's' : ''}</div>
       <button class="btn-activate" onclick="activateScene('${s.id}')">ACTIVATE</button>
-    </div>
-  `).join('');
+      <button onclick="toggleScenePreview('${s.id}')" style="font-size:11px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:4px 0;width:100%">▾ Preview</button>
+      <div id="preview-${s.id}" style="display:none;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);text-align:left">${previewHtml}</div>
+    </div>`
+  }).join('');
 }
 
 async function activateScene(sceneId) {
@@ -1202,6 +1493,7 @@ function renderSchedules() {
           <div class="sched-time">${timeStr}</div>
           <div class="sched-action">${action}</div>
           <div class="day-chips">${dayChips}</div>
+          <div style="font-size:11px;color:var(--accent-light,#a78bfa);margin-top:4px">⏱ Next: ${nextRunText(s)}</div>
         </div>
         <div class="sched-controls">
           <button class="btn btn-icon btn-ghost" onclick="openScheduleModal('${s.id}')" title="Edit">✏️</button>
@@ -1250,23 +1542,80 @@ async function deleteSchedule(id) {
 function renderSettings() {
   const wrap = document.getElementById('settings-wrap');
 
-  // Build rooms list
-  const roomsHtml = state.rooms.map(r => `
-    <div class="list-item">
-      <div class="list-item-icon">${r.icon || '💡'}</div>
-      <div class="list-item-info">
-        <div class="list-item-name">${esc(r.name)}</div>
-        <div class="list-item-meta">${(r.lights||[]).length} light(s)</div>
-      </div>
-      <div class="list-item-actions">
-        <button class="btn btn-icon btn-ghost btn-sm" onclick="openRoomModal('${r.id}')">✏️</button>
-        <button class="btn btn-icon btn-danger btn-sm" onclick="deleteRoom('${r.id}')">🗑️</button>
-      </div>
-    </div>
-  `).join('') + `<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openRoomModal()">+ Add Room</button>`;
+  // ── Floors & Rooms hierarchy ──────────────────────────────────────────────
+  const BAD = new Set([null, undefined, '', 'undefined', 'null', '0']);
+  const validFloorId = r => r.floorId && !BAD.has(r.floorId) && state.floors.find(f => f.id === r.floorId);
+  const unassigned = state.rooms.filter(r => !validFloorId(r));
 
-  // Build devices list
-  const devicesHtml = state.devices.map(d => `
+  const floorsHtml = state.floors.map(floor => {
+    const floorRooms = state.rooms.filter(r => validFloorId(r) && r.floorId === floor.id);
+    const roomsMarkup = floorRooms.map(r => {
+      const devices = (r.lights || []).map(l => `
+        <div class="device-row">
+          <div class="device-row-info">
+            <span>${l.icon || '💡'}</span>
+            <span>${esc(l.name)}</span>
+            <span style="color:var(--text-3)">${l.subnet}.${l.device} ch${l.channel} · ${l.type || 'relay'}</span>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-icon btn-ghost btn-sm" onclick="openLightModal('${l.id}','${r.id}')">✏️</button>
+            <button class="btn btn-icon btn-danger btn-sm" onclick="deleteLight('${r.id}','${l.id}')">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+      return `
+        <div class="room-group">
+          <div class="room-header">
+            <span>${r.icon || '🏠'} ${esc(r.name)}</span>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-icon btn-ghost btn-sm" onclick="openRoomModal('${r.id}')">✏️</button>
+              <button class="btn btn-icon btn-danger btn-sm" onclick="deleteRoom('${r.id}')">🗑️</button>
+            </div>
+          </div>
+          <div class="room-devices">
+            ${devices || '<div style="font-size:12px;color:var(--text-3);padding:4px 0">No devices yet</div>'}
+            <button class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:12px" onclick="openLightModal(null,'${r.id}')">+ Add Device</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="floor-group">
+        <div class="floor-header">
+          <span>🏢 ${esc(floor.name)}</span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-icon btn-ghost btn-sm" onclick="openFloorModal('${floor.id}')">✏️</button>
+            <button class="btn btn-icon btn-danger btn-sm" onclick="deleteFloor('${floor.id}')">🗑️</button>
+          </div>
+        </div>
+        <div class="floor-rooms">
+          ${roomsMarkup || '<div style="font-size:12px;color:var(--text-3)">No rooms on this floor yet</div>'}
+          <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="openRoomModal(null,'${floor.id}')">+ Add Room</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  const unassignedMarkup = unassigned.length ? `
+    <div class="unassigned-rooms">
+      <div style="margin-bottom:8px;font-weight:600">⚠️ Rooms not assigned to a floor — edit to assign:</div>
+      ${unassigned.map(r => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+          <span>${r.icon || '🏠'} ${esc(r.name)}</span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-icon btn-ghost btn-sm" onclick="openRoomModal('${r.id}')">✏️</button>
+            <button class="btn btn-icon btn-danger btn-sm" onclick="deleteRoom('${r.id}')">🗑️</button>
+          </div>
+        </div>`).join('')}
+    </div>` : '';
+
+  const structureHtml = `
+    ${floorsHtml}
+    ${unassignedMarkup}
+    <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openFloorModal()">+ Add Floor</button>
+  `;
+
+  // ── S-BUS Modules (physical hardware) ────────────────────────────────────
+  const modulesHtml = state.devices.map(d => `
     <div class="list-item">
       <div class="list-item-icon">📡</div>
       <div class="list-item-info">
@@ -1278,38 +1627,15 @@ function renderSettings() {
         <button class="btn btn-icon btn-danger btn-sm" onclick="deleteDevice('${d.id}')">🗑️</button>
       </div>
     </div>
-  `).join('') + `<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openDeviceModal()">+ Add Device</button>`;
+  `).join('') + `<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openDeviceModal()">+ Add S-BUS Module</button>`;
 
-  // Build lights per room
-  const lightsHtml = state.rooms.map(r => `
-    <div style="margin-bottom:16px">
-      <div style="font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:6px">${r.icon || '💡'} ${esc(r.name)}</div>
-      ${(r.lights||[]).map(l => `
-        <div class="list-item">
-          <div class="list-item-icon">💡</div>
-          <div class="list-item-info">
-            <div class="list-item-name">${esc(l.name)}</div>
-            <div class="list-item-meta">${l.subnet}.${l.device} ch${l.channel} · ${l.type || 'relay'}</div>
-          </div>
-          <div class="list-item-actions">
-            <button class="btn btn-icon btn-danger btn-sm" onclick="deleteLight('${r.id}','${l.id}')">🗑️</button>
-          </div>
-        </div>
-      `).join('')}
-      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openLightModal(null,'${r.id}')">+ Add Device</button>
-    </div>
-  `).join('');
-
+  // ── System ────────────────────────────────────────────────────────────────
   const s = state.settings;
   const systemHtml = `
     <div class="settings-form">
       <div class="form-row">
         <label class="form-label">SmartGate IP</label>
-        <input id="set-ip" class="form-input" value="${esc(s.gatewayIp || '192.168.86.166')}" placeholder="192.168.86.166">
-      </div>
-      <div class="form-row">
-        <label class="form-label">Server Port</label>
-        <input class="form-input" value="3001" disabled>
+        <input id="set-ip" class="form-input" value="${esc(s.gatewayIp || '192.168.1.100')}" placeholder="192.168.1.100">
       </div>
       <div class="form-row-2">
         <div class="form-row">
@@ -1325,16 +1651,21 @@ function renderSettings() {
     </div>
   `;
 
+  // Preserve which accordions were open before re-render
+  const openIds = new Set([...wrap.querySelectorAll('.accordion.open')].map(el => el.id));
+
   wrap.innerHTML = `
-    ${accordion('acc-rooms',    '🏠', 'Rooms',   roomsHtml)}
-    ${accordion('acc-devices',  '📡', 'Devices', devicesHtml)}
-    ${accordion('acc-lights',   '💡', 'Lights',  lightsHtml)}
-    ${accordion('acc-system',   '⚙️', 'System',  systemHtml)}
+    ${accordion('acc-structure', '🏢', 'Floors & Rooms', structureHtml)}
+    ${accordion('acc-modules',   '📡', 'S-BUS Modules',  modulesHtml)}
+    ${accordion('acc-system',    '⚙️', 'System',         systemHtml)}
   `;
 
-  // Re-attach accordion toggles
-  wrap.querySelectorAll('.accordion-header').forEach(h => {
-    h.addEventListener('click', () => h.closest('.accordion').classList.toggle('open'));
+  // Re-attach toggles and restore open state (auto-open Floors & Rooms on first load)
+  wrap.querySelectorAll('.accordion').forEach(acc => {
+    const wasOpen = openIds.has(acc.id);
+    const firstLoad = openIds.size === 0;
+    if (wasOpen || (firstLoad && acc.id === 'acc-structure')) acc.classList.add('open');
+    acc.querySelector('.accordion-header').addEventListener('click', () => acc.classList.toggle('open'));
   });
 }
 
@@ -1403,6 +1734,7 @@ const ROOM_ICONS   = ['🛋️','🛏️','🍳','🚿','🏢','💡','🎬','�
 const SCENE_ICONS  = ['✨','🎬','🌙','☀️','🕯️','🎉','📚','🍿','🌿','💤','🎵','🏠'];
 const ROOM_COLORS  = ['#7c3aed','#2563eb','#059669','#d97706','#dc2626','#db2777','#0891b2','#65a30d'];
 
+let _floorEditId  = null;
 let _roomEditId   = null;
 let _deviceEditId = null;
 let _lightEditId  = null;
@@ -1416,9 +1748,11 @@ let _sceneActions = [];
 let _schedDays    = [0,1,2,3,4,5,6];
 let _schedTrigger = 'time';
 let _schedAction  = 'scene';
-let _pickerRoomId = null;
-let _pickerLight  = null;
-let _pickerLevel  = 100;
+let _pickerScope   = null;  // 'floor' | 'room' | 'device'
+let _pickerFloorId = null;
+let _pickerRoomId  = null;
+let _pickerLight   = null;
+let _pickerLevel   = 100;
 
 function openModal(id) {
   const el = document.getElementById(id);
@@ -1452,11 +1786,58 @@ function buildColorGrid(gridId, colors, selected, onSelect) {
 }
 
 // ─── Room modal ──────────────────────────────────────────────────────────
-function openRoomModal(id) {
+// ── Floor CRUD ────────────────────────────────────────────────────────────
+function openFloorModal(id) {
+  _floorEditId = id || null;
+  const floor = id ? state.floors.find(f => f.id === id) : null;
+  document.getElementById('modal-floor-title').textContent = id ? 'Edit Floor' : 'Add Floor';
+  document.getElementById('floor-name').value = floor?.name || '';
+  openModal('modal-floor');
+}
+
+async function saveFloor() {
+  const name = document.getElementById('floor-name').value.trim();
+  if (!name) { toast('Please enter a floor name', 'error'); return; }
+  try {
+    if (_floorEditId) {
+      await API.put(`/api/floors/${_floorEditId}`, { name });
+    } else {
+      await API.post('/api/floors', { name });
+    }
+    closeModal('modal-floor');
+    // Reload from server to ensure state is consistent
+    state.floors = await safeGet('/api/floors', []);
+    renderSettings();
+    toast(_floorEditId ? 'Floor updated' : 'Floor added');
+  } catch(e) { toast('Failed to save floor', 'error'); }
+}
+
+async function deleteFloor(id) {
+  const floor = state.floors.find(f => f.id === id);
+  if (!floor) return;
+  const roomsOnFloor = state.rooms.filter(r => r.floorId === id).length;
+  const msg = roomsOnFloor
+    ? `Delete floor "${floor.name}"? Its ${roomsOnFloor} room(s) will become unassigned.`
+    : `Delete floor "${floor.name}"?`;
+  confirm_(msg, async () => {
+    await API.del(`/api/floors/${id}`);
+    state.floors = await safeGet('/api/floors', []);
+    state.rooms  = await safeGet('/api/rooms',  []);
+    renderSettings();
+    toast('Floor deleted');
+  });
+}
+
+// ── Room CRUD ─────────────────────────────────────────────────────────────
+function openRoomModal(id, defaultFloorId) {
   _roomEditId = id || null;
   const room = id ? state.rooms.find(r => r.id === id) : null;
   document.getElementById('modal-room-title').textContent = id ? 'Edit Room' : 'Add Room';
   document.getElementById('room-name').value = room?.name || '';
+  // Populate floor selector
+  const floorSel = document.getElementById('room-floor');
+  floorSel.innerHTML = '<option value="">— No floor —</option>' +
+    state.floors.map(f => `<option value="${f.id}" ${(room?.floorId || defaultFloorId) === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
   _roomIconSel  = room?.icon  || ROOM_ICONS[0];
   _roomColorSel = room?.color || ROOM_COLORS[0];
   buildEmojiGrid('room-icon-grid',  ROOM_ICONS,  _roomIconSel,  selectRoomIcon);
@@ -1476,19 +1857,20 @@ function selectRoomColor(color) {
 async function saveRoom() {
   const name = document.getElementById('room-name').value.trim();
   if (!name) { toast('Please enter a room name', 'error'); return; }
-  const data = { name, icon: _roomIconSel, color: _roomColorSel };
+  const rawFloorId = document.getElementById('room-floor')?.value;
+  const floorId = (rawFloorId && rawFloorId !== 'undefined' && rawFloorId !== 'null') ? rawFloorId : null;
+  const data = { name, icon: _roomIconSel, color: _roomColorSel, floorId };
   try {
     if (_roomEditId) {
       const existing = state.rooms.find(r => r.id === _roomEditId);
-      const updated = await API.put(`/api/rooms/${_roomEditId}`, { ...existing, ...data });
-      const idx = state.rooms.findIndex(r => r.id === _roomEditId);
-      state.rooms[idx] = updated;
+      await API.put(`/api/rooms/${_roomEditId}`, { ...existing, ...data });
     } else {
       const created = await API.post('/api/rooms', data);
-      state.rooms.push(created);
       state.activeRoomId = created.id;
     }
     closeModal('modal-room');
+    // Reload from server to ensure floor assignments are consistent
+    state.rooms = await safeGet('/api/rooms', []);
     renderRooms(); renderSettings();
     toast(_roomEditId ? 'Room updated' : 'Room added');
   } catch(e) { toast('Failed to save room', 'error'); }
@@ -1564,6 +1946,8 @@ function openLightModal(lightId, roomId) {
   document.getElementById('light-name').value    = light?.name    || '';
   document.getElementById('light-channel').value = light?.channel || 1;
   document.getElementById('light-type').value    = light?.type    || 'relay';
+  // ensure the stored value exists in the list (graceful fallback)
+  if (!document.getElementById('light-type').value) document.getElementById('light-type').value = 'other';
   buildIconPicker(light?.icon || '💡');
 
   // Populate room selector
@@ -1659,9 +2043,19 @@ function renderSceneActions() {
   const list = document.getElementById('scene-actions-list');
   if (!_sceneActions.length) { list.innerHTML = '<div style="color:var(--text-3);font-size:13px">No actions yet.</div>'; return; }
   list.innerHTML = _sceneActions.map((a,i) => {
-    const room  = state.rooms.find(r => (r.lights||[]).some(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel));
-    const light = (room?.lights||[]).find(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel);
-    const label = light ? `${room.icon} ${esc(room.name)} → ${esc(light.name)}` : `${a.subnet}.${a.device} ch${a.channel}`;
+    let label;
+    if (a.type === 'floor') {
+      const floor = state.floors.find(f => f.id === a.floorId);
+      label = `🏢 ${esc(floor?.name || a.label || 'Floor')} (entire floor)`;
+    } else if (a.type === 'room') {
+      const room = state.rooms.find(r => r.id === a.roomId);
+      label = `${room?.icon||'🏠'} ${esc(room?.name || a.label || 'Room')} (entire room)`;
+    } else {
+      // device (new format) or legacy (no type field)
+      const room  = state.rooms.find(r => (r.lights||[]).some(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel));
+      const light = (room?.lights||[]).find(l => l.subnet===a.subnet && l.device===a.device && l.channel===a.channel);
+      label = light ? `${light.icon||'💡'} ${esc(room.name)} → ${esc(light.name)}` : (a.label || `${a.subnet}.${a.device} ch${a.channel}`);
+    }
     return `
       <div class="action-item">
         <div class="action-item-text">${label}</div>
@@ -1677,53 +2071,108 @@ function removeAction(i) {
   renderSceneActions();
 }
 
-// Light picker
+// ── Scene action picker ──────────────────────────────────────────────────
 function openLightPicker() {
-  const picker = document.getElementById('light-picker');
-  picker.style.display = 'block';
-  _pickerRoomId = null; _pickerLight = null; _pickerLevel = 100;
-  showPickerStep('room');
-  const rooms = document.getElementById('picker-rooms');
-  rooms.innerHTML = state.rooms.map(r => `
-    <div class="picker-option" onclick="pickerSelectRoom('${r.id}')">${r.icon||'💡'} ${esc(r.name)}</div>
-  `).join('');
+  document.getElementById('light-picker').style.display = 'block';
+  _pickerScope = null; _pickerFloorId = null; _pickerRoomId = null; _pickerLight = null; _pickerLevel = 100;
+  showPickerStep('scope');
 }
+
 function closePicker() {
   document.getElementById('light-picker').style.display = 'none';
 }
+
 function showPickerStep(step) {
   document.querySelectorAll('.sub-picker-step').forEach(s => s.classList.remove('active'));
   document.getElementById(`picker-step-${step}`).classList.add('active');
 }
+
+function pickerSelectScope(scope) {
+  _pickerScope = scope;
+  if (scope === 'floor') {
+    // Show floor list
+    document.getElementById('picker-floors').innerHTML = state.floors.length
+      ? state.floors.map(f => `<div class="picker-option" onclick="pickerSelectFloor('${f.id}','${esc(f.name)}')" >🏢 ${esc(f.name)}</div>`).join('')
+      : '<div style="color:var(--text-3);padding:10px">No floors defined yet.</div>';
+    showPickerStep('floor');
+  } else if (scope === 'room') {
+    // Show room list, level back goes to scope
+    document.getElementById('picker-room-label').textContent = 'Select Room';
+    document.getElementById('picker-room-back-btn').setAttribute('onclick', "showPickerStep('scope')");
+    document.getElementById('picker-level-back-btn').setAttribute('onclick', "showPickerStep('room')");
+    populatePickerRooms();
+    showPickerStep('room');
+  } else {
+    // Device: show room list first
+    document.getElementById('picker-room-label').textContent = 'Select Room';
+    document.getElementById('picker-room-back-btn').setAttribute('onclick', "showPickerStep('scope')");
+    document.getElementById('picker-level-back-btn').setAttribute('onclick', "showPickerStep('light')");
+    populatePickerRooms();
+    showPickerStep('room');
+  }
+}
+
+function populatePickerRooms() {
+  document.getElementById('picker-rooms').innerHTML = state.rooms.length
+    ? state.rooms.map(r => `<div class="picker-option" onclick="pickerSelectRoom('${r.id}')">${r.icon||'🏠'} ${esc(r.name)}</div>`).join('')
+    : '<div style="color:var(--text-3);padding:10px">No rooms defined yet.</div>';
+}
+
+function pickerSelectFloor(floorId, floorName) {
+  _pickerFloorId = floorId;
+  _pickerLevel = 100; updateLevelBtns();
+  document.getElementById('picker-level-label').textContent = `Set all lights on "${floorName}"`;
+  document.getElementById('picker-level-back-btn').setAttribute('onclick', "showPickerStep('floor')");
+  showPickerStep('level');
+}
+
 function pickerSelectRoom(roomId) {
   _pickerRoomId = roomId;
   const room = state.rooms.find(r => r.id === roomId);
-  const lights = document.getElementById('picker-lights');
-  lights.innerHTML = (room?.lights||[]).map(l => `
-    <div class="picker-option" onclick="pickerSelectLight(${l.subnet},${l.device},${l.channel},'${esc(l.name)}')">${esc(l.name)}</div>
-  `).join('') || '<div style="color:var(--text-3);padding:10px">No lights in this room.</div>';
-  showPickerStep('light');
+  if (_pickerScope === 'room') {
+    // Go straight to level
+    _pickerLevel = 100; updateLevelBtns();
+    document.getElementById('picker-level-label').textContent = `Set all devices in "${room?.name}"`;
+    document.getElementById('picker-level-back-btn').setAttribute('onclick', "showPickerStep('room')");
+    showPickerStep('level');
+  } else {
+    // Device scope — show device list
+    document.getElementById('picker-lights').innerHTML = (room?.lights||[]).length
+      ? (room.lights).map(l => `<div class="picker-option" onclick="pickerSelectLight(${l.subnet},${l.device},${l.channel},'${esc(l.name)}')">${l.icon||'💡'} ${esc(l.name)}</div>`).join('')
+      : '<div style="color:var(--text-3);padding:10px">No devices in this room.</div>';
+    showPickerStep('light');
+  }
 }
-function pickerBack(to) {
-  showPickerStep(to);
-}
+
 function pickerSelectLight(subnet, device, channel, name) {
   _pickerLight = { subnet, device, channel, name };
-  _pickerLevel = 100;
-  updateLevelBtns();
+  _pickerLevel = 100; updateLevelBtns();
+  document.getElementById('picker-level-label').textContent = `Set "${name}"`;
   showPickerStep('level');
 }
+
 function setPickerLevel(lvl) {
   _pickerLevel = lvl;
   updateLevelBtns();
 }
+
 function updateLevelBtns() {
   document.getElementById('level-on').classList.toggle('active',  _pickerLevel === 100);
   document.getElementById('level-off').classList.toggle('active', _pickerLevel === 0);
 }
+
 function addPickerAction() {
-  if (!_pickerLight) return;
-  _sceneActions.push({ subnet: _pickerLight.subnet, device: _pickerLight.device, channel: _pickerLight.channel, level: _pickerLevel });
+  if (_pickerScope === 'floor' && _pickerFloorId) {
+    const floor = state.floors.find(f => f.id === _pickerFloorId);
+    _sceneActions.push({ type: 'floor', floorId: _pickerFloorId, label: `🏢 ${floor?.name || 'Floor'}`, level: _pickerLevel });
+  } else if (_pickerScope === 'room' && _pickerRoomId) {
+    const room = state.rooms.find(r => r.id === _pickerRoomId);
+    _sceneActions.push({ type: 'room', roomId: _pickerRoomId, label: `${room?.icon||'🏠'} ${room?.name || 'Room'}`, level: _pickerLevel });
+  } else if (_pickerScope === 'device' && _pickerLight) {
+    _sceneActions.push({ type: 'device', subnet: _pickerLight.subnet, device: _pickerLight.device, channel: _pickerLight.channel, label: _pickerLight.name, level: _pickerLevel });
+  } else {
+    return;
+  }
   renderSceneActions();
   closePicker();
 }
@@ -1866,9 +2315,236 @@ function esc(str) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  Scene preview toggle
+// ═══════════════════════════════════════════════════════════════════════════
+function toggleScenePreview(id) {
+  const el = document.getElementById('preview-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Mode (Away / Home)
+// ═══════════════════════════════════════════════════════════════════════════
+function renderModeBar() {
+  const home = document.getElementById('mode-home-btn');
+  const away = document.getElementById('mode-away-btn');
+  if (!home || !away) return;
+  const isHome = state.mode === 'home';
+  home.style.background    = isHome ? 'var(--green)' : 'var(--card)';
+  home.style.color         = isHome ? '#fff' : 'var(--text-2)';
+  home.style.borderColor   = isHome ? 'var(--green)' : 'var(--border)';
+  away.style.background    = !isHome ? 'var(--amber)' : 'var(--card)';
+  away.style.color         = !isHome ? '#000' : 'var(--text-2)';
+  away.style.borderColor   = !isHome ? 'var(--amber)' : 'var(--border)';
+}
+
+async function setMode(mode) {
+  try {
+    await API.post('/api/mode', { mode });
+    state.mode = mode;
+    renderModeBar();
+    toast(mode === 'home' ? '🏠 Home mode' : '🌙 Away mode');
+  } catch(e) { toast('Failed to set mode', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  What's On
+// ═══════════════════════════════════════════════════════════════════════════
+function renderWhatsOn() {
+  const el = document.getElementById('whats-on');
+  if (!el) return;
+  const active = [];
+  for (const room of state.rooms)
+    for (const light of (room.lights || []))
+      if ((state.lightState[lk(light)] || 0) > 0) active.push({ room, light });
+
+  if (!active.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:2px 0">Everything is off ✓</div>';
+    return;
+  }
+  el.innerHTML = `
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:6px">${active.length} device${active.length>1?'s':''} on</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${active.map(({room,light}) => `
+        <div onclick="selectRoom('${room.id}')" style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:20px;padding:3px 10px;font-size:12px;cursor:pointer">
+          ${light.icon||room.icon||'💡'} <span>${esc(light.name)}</span>
+        </div>`).join('')}
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Quick Scenes (favourites)
+// ═══════════════════════════════════════════════════════════════════════════
+function renderQuickScenes() {
+  const el = document.getElementById('quick-scenes');
+  if (!el) return;
+  const favs = state.scenes.filter(s => s.favourite);
+  if (!favs.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:8px">Quick Scenes</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+      ${favs.map(s => `
+        <button onclick="activateScene('${s.id}')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:var(--card);border:1px solid var(--border);border-radius:12px;cursor:pointer;font-size:13px;color:var(--text);transition:all 0.15s">
+          ${s.icon||'✨'} ${esc(s.name)}
+        </button>`).join('')}
+    </div>`;
+}
+
+async function toggleFav(id, current) {
+  const scene = state.scenes.find(s => s.id === id);
+  if (!scene) return;
+  scene.favourite = !current;
+  await API.put(`/api/scenes/${id}`, scene);
+  renderScenes();
+  renderQuickScenes();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Floor All Off
+// ═══════════════════════════════════════════════════════════════════════════
+async function floorAllOff(floorId) {
+  try {
+    await API.post(`/api/floor/${floorId}/alloff`, {});
+    state.lightState = await safeGet('/api/state', {});
+    renderRooms();
+    renderWhatsOn();
+    toast('All lights off');
+  } catch(e) { toast('Failed', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Next-run preview
+// ═══════════════════════════════════════════════════════════════════════════
+function clientSunTimes(date, lat, lon) {
+  try {
+    const rad = Math.PI / 180;
+    const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
+    const B = (360 / 365) * (dayOfYear - 81) * rad;
+    const EoT = 9.87 * Math.sin(2*B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
+    const decl = 23.45 * Math.sin(B) * rad;
+    const cosHa = -Math.tan(lat * rad) * Math.tan(decl);
+    if (cosHa < -1 || cosHa > 1) return { sunrise: null, sunset: null };
+    const ha = Math.acos(cosHa) / rad;
+    const noon = 12 - (lon / 15) - (EoT / 60);
+    return { sunrise: noon - ha / 15, sunset: noon + ha / 15 };
+  } catch { return { sunrise: null, sunset: null }; }
+}
+
+function nextRunText(sched) {
+  if (!sched.enabled) return 'Disabled';
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  let targetMins;
+  if (sched.triggerType === 'time' && sched.time) {
+    const [h, m] = sched.time.split(':').map(Number);
+    targetMins = h * 60 + m;
+  } else if (sched.triggerType === 'sunrise' || sched.triggerType === 'sunset') {
+    const lat = state.settings.latitude || 40.7128;
+    const lon = state.settings.longitude || -74.006;
+    const { sunrise, sunset } = clientSunTimes(now, lat, lon);
+    const base = sched.triggerType === 'sunrise' ? sunrise : sunset;
+    if (base == null) return 'N/A';
+    targetMins = Math.round(base * 60) + (sched.offset || 0);
+  } else return '—';
+  const isToday = targetMins > nowMins;
+  const h = Math.floor(targetMins / 60) % 24;
+  const m = targetMins % 60;
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const displayH = h % 12 || 12;
+  const timeStr = `${displayH}:${String(m).padStart(2,'0')} ${suffix}`;
+  return (isToday ? 'Today ' : 'Tomorrow ') + timeStr;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Activity log
+// ═══════════════════════════════════════════════════════════════════════════
+async function renderActivity() {
+  const el = document.getElementById('activity-list');
+  if (!el) return;
+  const data = await safeGet('/api/activity?limit=100', []);
+  const sub = document.getElementById('activity-subtitle');
+  if (!data.length) {
+    el.innerHTML = '<div style="text-align:center;padding:60px 0;color:var(--text-3)"><div style="font-size:40px;margin-bottom:12px">📋</div><div>No activity yet</div></div>';
+    if (sub) sub.textContent = 'No events recorded';
+    return;
+  }
+  if (sub) sub.textContent = `${data.length} recent events`;
+  const typeStyle = {
+    device:     { color: 'var(--amber)',   icon: '💡' },
+    scene:      { color: 'var(--accent)',  icon: '✨' },
+    schedule:   { color: 'var(--green)',   icon: '⏰' },
+    mode:       { color: 'var(--text-2)',  icon: '🏠' },
+    failure:    { color: 'var(--red)',     icon: '⚠️' },
+    wall_panel: { color: 'var(--accent)',  icon: '🔘' },
+  };
+  const now = Date.now();
+  el.innerHTML = data.map(row => {
+    const diff = now - row.ts;
+    let timeStr;
+    if (diff < 60000) timeStr = 'Just now';
+    else if (diff < 3600000) timeStr = `${Math.floor(diff/60000)}m ago`;
+    else if (diff < 86400000) timeStr = `${Math.floor(diff/3600000)}h ago`;
+    else {
+      const d = new Date(row.ts);
+      timeStr = d.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+    }
+    // Detect failure entries and wall panel scenes
+    const isFailed = row.description && row.description.startsWith('FAILED:');
+    const isWallPanel = row.details && row.details.source === 'wall_panel';
+    const styleKey = isFailed ? 'failure' : isWallPanel ? 'wall_panel' : row.type;
+    const { color, icon } = typeStyle[styleKey] || { color: 'var(--card)', icon: '•' };
+    const textColor = isFailed ? 'var(--red)' : 'var(--text)';
+    return `
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="width:32px;height:32px;border-radius:8px;background:${color};opacity:0.85;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;color:${textColor}">${esc(row.description)}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px">${timeStr}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  State refresh
+// ═══════════════════════════════════════════════════════════════════════════
+async function refreshState() {
+  const btn = document.getElementById('refresh-btn');
+  if (btn) { btn.textContent = '↻'; btn.style.opacity = '0.5'; btn.style.animation = 'spin 0.6s linear infinite'; }
+  try {
+    await API.post('/api/refresh', {});
+    // Wait 1.5s for devices to respond, then pull updated state
+    await new Promise(r => setTimeout(r, 1500));
+    state.lightState = await safeGet('/api/state', {});
+    renderRooms();
+    renderWhatsOn();
+    toast('State refreshed');
+  } catch(e) { toast('Refresh failed', 'error'); }
+  finally {
+    if (btn) { btn.style.animation = ''; btn.style.opacity = '1'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  Boot
 // ═══════════════════════════════════════════════════════════════════════════
-loadAll();
+loadAll().then(() => {
+  connectSSE();
+  setTimeout(async () => {
+    try { await API.post('/api/refresh', {}); } catch(e) {}
+  }, 1500);
+}).catch(e => {
+  // Show load failure visibly
+  const d = document.getElementById('debug-error') || document.createElement('div');
+  d.id = 'debug-error';
+  d.style = 'position:fixed;top:0;left:0;right:0;background:red;color:#fff;padding:8px;font-size:12px;z-index:99999';
+  d.textContent = 'LOAD FAILED: ' + e.message;
+  document.body.appendChild(d);
+});
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>
