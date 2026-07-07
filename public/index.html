@@ -243,12 +243,6 @@ a { color: inherit; text-decoration: none; }
 }
 /* ── Room content ───────────────────────────────────────────────────────── */
 .room-content { padding: 0 32px 32px; }
-.room-section { margin-bottom: 30px; scroll-margin-top: 12px; border-radius: var(--radius); }
-@keyframes jump-flash {
-  0%   { background: var(--accent-glow); }
-  100% { background: transparent; }
-}
-.room-section.jump-highlight { animation: jump-flash 1.4s ease forwards; }
 .room-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px;
@@ -304,8 +298,12 @@ a { color: inherit; text-decoration: none; }
   transition: opacity 0.3s ease;
   pointer-events: none;
 }
-.light-card.on { border-color: rgba(245,158,11,0.35); box-shadow: 0 0 30px var(--amber-glow), inset 0 0 30px rgba(245,158,11,0.04); }
-.light-card.on::before { background: radial-gradient(ellipse at top, rgba(245,158,11,0.08) 0%, transparent 70%); opacity: 1; }
+.light-card.on {
+  border-color: rgba(245,158,11,0.75);
+  background: linear-gradient(180deg, rgba(245,158,11,0.14), rgba(245,158,11,0.05)), var(--card);
+  box-shadow: 0 0 26px rgba(245,158,11,0.45), inset 0 0 30px rgba(245,158,11,0.08);
+}
+.light-card.on::before { background: radial-gradient(ellipse at top, rgba(245,158,11,0.16) 0%, transparent 70%); opacity: 1; }
 .light-card:hover { background: var(--card-hover); }
 
 .light-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
@@ -800,6 +798,11 @@ select.form-input { cursor: pointer; }
     min-height: unset; height: 44px;
   }
   .light-card::before { display: none; }
+  .light-card.on {
+    background: rgba(245,158,11,0.18);
+    border-color: rgba(245,158,11,0.85);
+    box-shadow: 0 0 14px rgba(245,158,11,0.55);
+  }
   .light-card-top { display: contents; }
   .light-icon { width: 24px; height: 24px; font-size: 14px; flex-shrink: 0; margin-bottom: 0; border-radius: 6px; }
   .light-name { flex: 1; font-size: 12px; font-weight: 600; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1516,20 +1519,11 @@ function renderRooms() {
   renderRoomContent();
 }
 
-// Pills are jump-links: clicking scrolls to that room's section (all rooms
-// are rendered at once) instead of swapping which single room is visible.
+// Single-room view: with ~100 devices in the house, showing every room at
+// once means endless scrolling — pills select which room is shown below.
 function selectRoom(id) {
   state.activeRoomId = id;
-  // Update pill highlight in place — a full re-render would cancel the scroll
-  document.querySelectorAll('.room-pill').forEach(p =>
-    p.classList.toggle('active', p.dataset.roomId === id));
-  const sec = document.getElementById(`rsec-${id}`);
-  if (sec) {
-    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    sec.classList.remove('jump-highlight');
-    void sec.offsetWidth; // restart the animation if re-clicked
-    sec.classList.add('jump-highlight');
-  }
+  renderRooms();
 }
 
 function renderRoomContent() {
@@ -1538,31 +1532,22 @@ function renderRoomContent() {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏠</div><div class="empty-title">No rooms yet</div><div class="empty-desc">Add a room to get started.</div><button class="btn btn-primary" style="margin-top:14px" onclick="openRoomModal()">+ Add Room</button></div>';
     return;
   }
+  const room = state.rooms.find(r => r.id === state.activeRoomId) || state.rooms[0];
 
-  const BAD = new Set([null, undefined, '', 'undefined', 'null', '0']);
-  const validFid = r => r.floorId && !BAD.has(r.floorId) && state.floors.find(f => f.id === r.floorId);
-  const ordered = [];
-  for (const floor of state.floors)
-    for (const r of state.rooms) if (validFid(r) && r.floorId === floor.id) ordered.push(r);
-  for (const r of state.rooms) if (!validFid(r)) ordered.push(r);
-
-  el.innerHTML = ordered.map(room => {
-    const lights = room.lights || [];
-    return `
-      <div class="room-section" id="rsec-${room.id}">
-        <div class="room-header">
-          <div class="room-header-title">${room.icon || '💡'} ${esc(room.name)}</div>
-          <div class="room-header-actions">
-            <button class="btn btn-ghost btn-sm" onclick="roomAllOn('${room.id}')">All On</button>
-            <button class="btn btn-ghost btn-sm" onclick="roomAllOff('${room.id}')">All Off</button>
-          </div>
-        </div>
-        ${lights.length === 0
-          ? `<div style="font-size:13px;color:var(--text-3);padding:2px 0 6px">No devices yet — add them in Settings</div>`
-          : `<div class="lights-grid">${lights.map(l => renderLightCard(l)).join('')}</div>`
-        }
-      </div>`;
-  }).join('');
+  const lights = room.lights || [];
+  el.innerHTML = `
+    <div class="room-header">
+      <div class="room-header-title">${room.icon || '💡'} ${esc(room.name)}</div>
+      <div class="room-header-actions">
+        <button class="btn btn-ghost btn-sm" onclick="roomAllOn('${room.id}')">All On</button>
+        <button class="btn btn-ghost btn-sm" onclick="roomAllOff('${room.id}')">All Off</button>
+      </div>
+    </div>
+    ${lights.length === 0
+      ? `<div class="empty-state" style="padding:40px 0"><div class="empty-icon">💡</div><div class="empty-title">No devices yet</div><div class="empty-desc">Add devices in Settings → Floors & Rooms</div></div>`
+      : `<div class="lights-grid">${lights.map(l => renderLightCard(l)).join('')}</div>`
+    }
+  `;
 }
 
 function lk(l) { return `${l.subnet}.${l.device}.${l.channel}`; }
