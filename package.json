@@ -9,5 +9,7 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "hap-nodejs": "^1.1.0"
+  }
 }
