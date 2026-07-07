@@ -96,6 +96,18 @@ const key = (s, d, c) => `${s}.${d}.${c}`;
 // blanket "lights" commands; everything else is a Lightbulb.
 const SWITCH_TYPES = new Set(['water-heater', 'pump', 'ac', 'heater', 'fan', 'tv', 'socket', 'gate', 'other']);
 
+// HomeKit only allows alphanumerics, spaces and apostrophes in names, and iOS
+// can refuse accessories that violate this. "A/C" is the common offender in
+// this home — turn it into "AC", then scrub anything else that's left.
+function hapName(name) {
+    return String(name)
+        .replace(/\b([A-Za-z])\/([A-Za-z])\b/g, '$1$2')  // A/C -> AC
+        .replace(/[^A-Za-z0-9' ]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '') || 'Device';
+}
+
 // ─── SSE listener — push state changes into HomeKit ──────────────────────────
 function connectSSE() {
     const url = new URL(`${config.apiBase}/api/events?token=${encodeURIComponent(config.token)}`);
@@ -161,7 +173,7 @@ async function main() {
     for (const room of rooms) {
         for (const l of (room.lights || [])) {
             const k = key(l.subnet, l.device, l.channel);
-            const name = nameCount[l.name] > 1 ? `${room.name} ${l.name}` : l.name;
+            const name = hapName(nameCount[l.name] > 1 ? `${room.name} ${l.name}` : l.name);
             const acc = new Accessory(name, uuid.generate(`smartbus:light:${k}`));
             acc.getService(Service.AccessoryInformation)
                 .setCharacteristic(Characteristic.Manufacturer, 'SmartBus G4')
