@@ -43,14 +43,25 @@ const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
 if (!config.token) { console.error('[HomeKit] config needs a "token" (enrolled device token)'); process.exit(1); }
 
 config.apiBase = config.apiBase || 'http://127.0.0.1:3003';
-config.pincode = config.pincode || '942-71-836';
-config.port    = config.port    || 51826;
-// The username is the bridge's stable identity on the network — generate once,
-// persist, and never change it or the Home app sees a brand-new bridge.
-if (!config.username) {
-    const b = crypto.randomBytes(5);
-    config.username = ['1A', ...[...b].map(x => x.toString(16).padStart(2, '0').toUpperCase())].join(':');
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+// One HomeKit bridge per floor. A single bridge caps out around 100 accessories
+// (Apple's spec) and this home has 96 — pairing failed with kCountErr on one
+// big bridge, so we split by floor (~30 each). config.bridges maps a group name
+// to its stable HomeKit identity; each is generated once and persisted.
+config.bridges = config.bridges || {};
+const BASE_PORT = 51826;
+
+function bridgeIdentity(group, index) {
+    if (!config.bridges[group]) {
+        const b = crypto.randomBytes(5);
+        const p = crypto.randomInt(100000000, 999999999).toString(); // 9 digits
+        config.bridges[group] = {
+            username: ['1A', ...[...b].map(x => x.toString(16).padStart(2, '0').toUpperCase())].join(':'),
+            pincode:  `${p.slice(0,3)}-${p.slice(3,5)}-${p.slice(5,8)}`,
+            port:     BASE_PORT + index,
+        };
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+    }
+    return config.bridges[group];
 }
 
 HAPStorage.setCustomStoragePath(path.join(DATA_DIR, 'hap'));
@@ -157,18 +168,42 @@ function handleEvent(msg) {
     }
 }
 
-// ─── Build & publish the bridge ───────────────────────────────────────────────
+// Build one Accessory for a single light/channel, registering its On
+// characteristic in the global map so SSE updates reach it.
+function buildAccessory(room, l, nameCount) {
+    const k = key(l.subnet, l.device, l.channel);
+    const name = hapName(nameCount[l.name] > 1 ? `${room.name} ${l.name}` : l.name);
+    const acc = new Accessory(name, uuid.generate(`smartbus:light:${k}`));
+    acc.getService(Service.AccessoryInformation)
+        .setCharacteristic(Characteristic.Manufacturer, 'SmartBus G4')
+        .setCharacteristic(Characteristic.Model, l.type || 'relay')
+        .setCharacteristic(Characteristic.SerialNumber, k);
+
+    const svc = SWITCH_TYPES.has(l.type) ? new Service.Switch(name) : new Service.Lightbulb(name);
+    svc.getCharacteristic(Characteristic.On)
+        .onGet(() => (lightState[k] || 0) > 0)
+        .onSet(async (on) => {
+            try {
+                await api('POST', '/api/light',
+                    { subnet: l.subnet, device: l.device, channel: l.channel, level: on ? 100 : 0 });
+                lightState[k] = on ? 100 : 0;
+            } catch (e) {
+                console.error(`[HomeKit] Command failed for ${name}: ${e.message}`);
+                throw new (require('hap-nodejs').HapStatusError)(-70402 /* SERVICE_COMMUNICATION_FAILURE */);
+            }
+        });
+    acc.addService(svc);
+    characteristics.set(k, svc.getCharacteristic(Characteristic.On));
+    return acc;
+}
+
+// ─── Build & publish one bridge per floor ─────────────────────────────────────
 async function main() {
-    const rooms = await api('GET', '/api/rooms');
-    const state = await api('GET', '/api/state');
+    const rooms  = await api('GET', '/api/rooms');
+    const floors = await api('GET', '/api/floors');
+    const state  = await api('GET', '/api/state');
     if (!Array.isArray(rooms)) throw new Error('could not load rooms — check apiBase/token');
     Object.assign(lightState, state || {});
-
-    const bridge = new Bridge('SmartBus', uuid.generate('smartbus:bridge'));
-    bridge.getService(Service.AccessoryInformation)
-        .setCharacteristic(Characteristic.Manufacturer, 'SmartBus G4')
-        .setCharacteristic(Characteristic.Model, 'SmartGate Bridge')
-        .setCharacteristic(Characteristic.SerialNumber, config.username);
 
     // Duplicate light names across rooms get the room name prefixed
     const nameCount = {};
@@ -176,47 +211,46 @@ async function main() {
         for (const l of (room.lights || []))
             nameCount[l.name] = (nameCount[l.name] || 0) + 1;
 
-    let count = 0;
+    // Group rooms by floor, in floor order, with a trailing "Other" for any
+    // rooms not assigned to a floor. Each group becomes its own HomeKit bridge.
+    const floorName = {}; (floors || []).forEach(f => floorName[f.id] = f.name);
+    const groups = new Map(); // group label -> [rooms]
+    for (const f of (floors || [])) groups.set(f.name, []);
     for (const room of rooms) {
-        for (const l of (room.lights || [])) {
-            const k = key(l.subnet, l.device, l.channel);
-            const name = hapName(nameCount[l.name] > 1 ? `${room.name} ${l.name}` : l.name);
-            const acc = new Accessory(name, uuid.generate(`smartbus:light:${k}`));
-            acc.getService(Service.AccessoryInformation)
-                .setCharacteristic(Characteristic.Manufacturer, 'SmartBus G4')
-                .setCharacteristic(Characteristic.Model, l.type || 'relay')
-                .setCharacteristic(Characteristic.SerialNumber, k);
-
-            const isSwitch = SWITCH_TYPES.has(l.type);
-            const svc = isSwitch ? new Service.Switch(name) : new Service.Lightbulb(name);
-            svc.getCharacteristic(Characteristic.On)
-                .onGet(() => (lightState[k] || 0) > 0)
-                .onSet(async (on) => {
-                    try {
-                        await api('POST', '/api/light',
-                            { subnet: l.subnet, device: l.device, channel: l.channel, level: on ? 100 : 0 });
-                        lightState[k] = on ? 100 : 0;
-                    } catch (e) {
-                        console.error(`[HomeKit] Command failed for ${name}: ${e.message}`);
-                        throw new (require('hap-nodejs').HapStatusError)(-70402 /* SERVICE_COMMUNICATION_FAILURE */);
-                    }
-                });
-            acc.addService(svc);
-            characteristics.set(k, svc.getCharacteristic(Characteristic.On));
-            bridge.addBridgedAccessory(acc);
-            count++;
-        }
+        const label = floorName[room.floorId] || 'Other';
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label).push(room);
     }
 
-    await bridge.publish({
-        username: config.username,
-        pincode:  config.pincode,
-        port:     config.port,
-        category: Categories.BRIDGE,
-    });
+    let index = 0, published = 0;
+    const summary = [];
+    for (const [label, groupRooms] of groups) {
+        const lights = groupRooms.flatMap(r => (r.lights || []).map(l => ({ room: r, l })));
+        if (lights.length === 0) continue;
+        const id = bridgeIdentity(label, index++);
 
-    console.log(`[HomeKit] Bridge published: ${count} accessories on port ${config.port}`);
-    console.log(`[HomeKit] Pairing code: ${config.pincode}`);
+        const bridge = new Bridge(`SmartBus ${label}`, uuid.generate(`smartbus:bridge:${label}`));
+        bridge.getService(Service.AccessoryInformation)
+            .setCharacteristic(Characteristic.Manufacturer, 'SmartBus G4')
+            .setCharacteristic(Characteristic.Model, 'SmartGate Bridge')
+            .setCharacteristic(Characteristic.SerialNumber, id.username);
+
+        for (const { room, l } of lights) bridge.addBridgedAccessory(buildAccessory(room, l, nameCount));
+
+        await bridge.publish({
+            username: id.username,
+            pincode:  id.pincode,
+            port:     id.port,
+            category: Categories.BRIDGE,
+        });
+        published++;
+        summary.push({ label, count: lights.length, pincode: id.pincode, port: id.port });
+        console.log(`[HomeKit] Published "SmartBus ${label}": ${lights.length} accessories · code ${id.pincode} · port ${id.port}`);
+    }
+
+    if (published === 0) throw new Error('no accessories to publish');
+    console.log(`[HomeKit] ${published} bridge(s) live. Pair each separately in the Home app:`);
+    for (const s of summary) console.log(`[HomeKit]   SmartBus ${s.label} → ${s.pincode}`);
     connectSSE();
 
     // Safety net: re-sync full state every 5 minutes in case SSE missed anything
