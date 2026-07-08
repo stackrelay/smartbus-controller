@@ -2,9 +2,11 @@
 
 const dgram  = require('dgram');
 const http   = require('http');
+const net    = require('net');
 const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 const DATA_DIR   = path.join(__dirname, 'data');
@@ -1273,6 +1275,42 @@ const server = http.createServer(async (req, res) => {
     // ── Static files ──────────────────────────────────────────────────────────
     serveStatic(req, res, urlObj.pathname);
 });
+
+// ─── HomeKit bridge watchdog ──────────────────────────────────────────────────
+// The bridge runs as a separate process and can die without the server: the
+// DSM boot task may predate it, and under memory pressure (e.g. a full
+// AntiVirus scan pushing the box into swap) the OOM killer picks the biggest
+// node process first. If the bridge is configured but its port is dead,
+// respawn it. Found dead exactly this way on 2026-07-07 after an overnight
+// NAS reboot.
+const BRIDGE_PORT   = 51826;
+const BRIDGE_SCRIPT = path.join(__dirname, 'homekit-bridge.js');
+const BRIDGE_CONFIG = path.join(DATA_DIR, 'homekit.json');
+let bridgeRestarts = 0;
+
+function checkBridge() {
+    if (!fs.existsSync(BRIDGE_SCRIPT) || !fs.existsSync(BRIDGE_CONFIG)) return;
+    const sock = net.connect({ host: '127.0.0.1', port: BRIDGE_PORT, timeout: 3000 });
+    sock.on('connect', () => sock.destroy());
+    sock.on('timeout',  () => sock.destroy());
+    sock.on('error', () => {
+        sock.destroy();
+        bridgeRestarts++;
+        console.log(`[Watchdog] Bridge port ${BRIDGE_PORT} dead — respawning (restart #${bridgeRestarts})`);
+        try {
+            const out = fs.openSync(path.join(__dirname, 'homekit.log'), 'a');
+            const child = spawn(process.execPath, [BRIDGE_SCRIPT],
+                { cwd: __dirname, detached: true, stdio: ['ignore', out, out] });
+            child.unref();
+            fs.closeSync(out);
+            logActivity('system', 'HomeKit bridge restarted by watchdog', { restarts: bridgeRestarts });
+        } catch (e) {
+            console.error('[Watchdog] Failed to spawn bridge:', e.message);
+        }
+    });
+}
+setTimeout(checkBridge, 15000);       // shortly after boot
+setInterval(checkBridge, 120000);     // then every 2 minutes
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadDb();

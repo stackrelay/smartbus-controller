@@ -24,6 +24,13 @@ const crypto = require('crypto');
 const { Bridge, Accessory, Service, Characteristic, Categories, uuid, HAPStorage } =
     require('hap-nodejs');
 
+// Timestamp every log line — this process can die and be respawned by the
+// server's watchdog, and "when" matters when reading the log afterwards.
+for (const level of ['log', 'warn', 'error']) {
+    const orig = console[level].bind(console);
+    console[level] = (...args) => orig(new Date().toISOString(), ...args);
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 const DATA_DIR    = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'homekit.json');
