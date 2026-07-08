@@ -1186,6 +1186,13 @@ select.form-input { cursor: pointer; }
   </div>
 </div>
 
+<div id="modal-nspick" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title"><span id="ns-pick-title">Add light</span><button class="modal-close" onclick="closeModal('modal-nspick')">✕</button></div>
+    <div id="ns-pick-list" style="max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+  </div>
+</div>
+
 <div id="modal-confirm" class="modal-backdrop">
   <div class="modal" style="max-width:360px">
     <div class="modal-title"><span id="confirm-title">Confirm</span><button class="modal-close" onclick="closeModal('modal-confirm')">✕</button></div>
@@ -1974,12 +1981,50 @@ function renderSettings() {
     <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="logoutDevice()">Log out this device</button>
   `;
 
+  // ── Night Security ────────────────────────────────────────────────────────
+  const ns = nsGet();
+  const nsLightRow = (l, role) => `
+    <div class="list-item">
+      <div class="list-item-icon">${role === 'backdoor' ? '🚪' : '🛋️'}</div>
+      <div class="list-item-info">
+        <div class="list-item-name">${esc(l.name)}</div>
+        <div class="list-item-meta">${l.subnet}.${l.device} ch${l.channel}</div>
+      </div>
+      <button class="btn btn-icon btn-danger btn-sm" onclick="nsRemoveLight('${role}','${l.subnet}.${l.device}.${l.channel}')">🗑️</button>
+    </div>`;
+  const nightSecurityHtml = `
+    <div style="font-size:13px;color:var(--text-2);margin-bottom:14px">Randomly cycles a few lights overnight so the house looks occupied — a nighttime intruder deterrent. Runs every night within the window below.</div>
+    <label style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <span style="font-weight:600">Enable night security</span>
+      <span class="toggle-pill"><input type="checkbox" ${ns.enabled ? 'checked' : ''} onchange="nsSetEnabled(this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+    </label>
+    <div class="form-row-2">
+      <div class="form-row"><label class="form-label">Start</label><input id="ns-start" type="time" class="form-input" value="${ns.start}" onchange="nsSaveTimes()"></div>
+      <div class="form-row"><label class="form-label">End</label><input id="ns-end" type="time" class="form-input" value="${ns.end}" onchange="nsSaveTimes()"></div>
+    </div>
+    <div style="margin-top:16px">
+      <div class="form-label">🚪 Backdoor lights <span style="color:var(--text-3);font-weight:400">— at least one stays on</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+        ${ns.backdoor.map(l => nsLightRow(l, 'backdoor')).join('') || '<div style="font-size:12px;color:var(--text-3)">None selected</div>'}
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openNsPicker('backdoor')">+ Add backdoor light</button>
+    </div>
+    <div style="margin-top:16px">
+      <div class="form-label">🛋️ Indoor lights <span style="color:var(--text-3);font-weight:400">— randomized on/off</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+        ${ns.indoor.map(l => nsLightRow(l, 'indoor')).join('') || '<div style="font-size:12px;color:var(--text-3)">None selected</div>'}
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openNsPicker('indoor')">+ Add indoor light</button>
+    </div>
+  `;
+
   // Preserve which accordions were open before re-render
   const openIds = new Set([...wrap.querySelectorAll('.accordion.open')].map(el => el.id));
 
   wrap.innerHTML = `
     ${accordion('acc-structure', '🏢', 'Floors & Rooms', structureHtml)}
     ${accordion('acc-modules',   '📡', 'S-BUS Modules',  modulesHtml)}
+    ${accordion('acc-nightsec',  '🌙', 'Night Security', nightSecurityHtml)}
     ${accordion('acc-security',  '🔐', 'Security & Devices', securityHtml)}
     ${accordion('acc-system',    '⚙️', 'System',         systemHtml)}
   `;
@@ -2083,6 +2128,78 @@ async function saveSettings() {
     renderSettings();
     toast('Settings saved');
   } catch(e) { toast('Failed to save settings', 'error'); }
+}
+
+// ── Night Security ───────────────────────────────────────────────────────────
+let _nsPickRole = null;
+
+function nsGet() {
+  const ns = state.settings.nightSecurity || {};
+  return {
+    enabled: !!ns.enabled,
+    start: ns.start || '00:00',
+    end:   ns.end   || '05:00',
+    backdoor: Array.isArray(ns.backdoor) ? ns.backdoor : [],
+    indoor:   Array.isArray(ns.indoor)   ? ns.indoor   : [],
+  };
+}
+
+async function saveNightSecurity(ns) {
+  state.settings.nightSecurity = ns;
+  try {
+    const updated = await API.put('/api/settings', { ...state.settings, nightSecurity: ns });
+    state.settings = updated;
+    renderSettings();
+  } catch(e) { toast('Failed to save night security', 'error'); }
+}
+
+function nsSetEnabled(on) {
+  const ns = nsGet(); ns.enabled = on;
+  saveNightSecurity(ns);
+  toast(on ? '🌙 Night security enabled' : 'Night security disabled');
+}
+
+function nsSaveTimes() {
+  const ns = nsGet();
+  ns.start = document.getElementById('ns-start').value || '00:00';
+  ns.end   = document.getElementById('ns-end').value   || '05:00';
+  saveNightSecurity(ns);
+}
+
+function nsRemoveLight(role, key) {
+  const ns = nsGet();
+  ns[role] = ns[role].filter(l => `${l.subnet}.${l.device}.${l.channel}` !== key);
+  saveNightSecurity(ns);
+}
+
+function openNsPicker(role) {
+  _nsPickRole = role;
+  document.getElementById('ns-pick-title').textContent =
+    role === 'backdoor' ? 'Add backdoor light' : 'Add indoor light';
+  const ns = nsGet();
+  const chosen = new Set([...ns.backdoor, ...ns.indoor].map(l => lk(l)));
+  let html = '';
+  for (const room of state.rooms) {
+    const lights = (room.lights || []).filter(l => !chosen.has(lk(l)));
+    if (!lights.length) continue;
+    html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-3);margin:10px 0 2px">${esc(room.name)}</div>`;
+    html += lights.map(l => `<div class="picker-option" onclick="nsAddLight('${lk(l)}')">${l.icon || '💡'} ${esc(l.name)} <span style="color:var(--text-3);font-size:11px">${l.subnet}.${l.device} ch${l.channel}</span></div>`).join('');
+  }
+  document.getElementById('ns-pick-list').innerHTML = html || '<div style="color:var(--text-3);font-size:13px">All lights already added.</div>';
+  openModal('modal-nspick');
+}
+
+function nsAddLight(key) {
+  let found = null;
+  for (const room of state.rooms) {
+    const l = (room.lights || []).find(x => lk(x) === key);
+    if (l) { found = l; break; }
+  }
+  if (!found) return;
+  const ns = nsGet();
+  ns[_nsPickRole].push({ subnet: found.subnet, device: found.device, channel: found.channel, name: found.name });
+  closeModal('modal-nspick');
+  saveNightSecurity(ns);
 }
 
 async function deleteRoom(id) {
@@ -2867,6 +2984,7 @@ async function renderActivity() {
     timer:      { color: 'var(--amber)',   icon: '⏱' },
     longOn:     { color: 'var(--red)',     icon: '⏳' },
     auth:       { color: 'var(--accent)',  icon: '🔐' },
+    nightsec:   { color: 'var(--accent)',  icon: '🌙' },
     system:     { color: 'var(--text-2)',  icon: '🛠️' },
     failure:    { color: 'var(--red)',     icon: '⚠️' },
     wall_panel: { color: 'var(--accent)',  icon: '🔘' },

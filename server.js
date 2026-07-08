@@ -341,10 +341,12 @@ function checkLongOnAlerts() {
     if (!hours) return;
     const thresholdMs = hours * 3600000;
     const now = Date.now();
+    const nsKeys = nightSecurityKeys(); // lights the night simulator is cycling
     for (const room of db.rooms) {
         for (const light of (room.lights || [])) {
             if (light.excludeLongOnAlert) continue;
             const k = lightKey(light.subnet, light.device, light.channel);
+            if (nsKeys.has(k)) continue; // simulator toggles these; not a real "left on"
             if (!(lightState[k] > 0) || longOnAlerted[k]) continue;
             const since = lightOnSince[k];
             if (!since || now - since < thresholdMs) continue;
@@ -358,6 +360,96 @@ function checkLongOnAlerts() {
     }
 }
 setInterval(checkLongOnAlerts, 30000);
+
+// ─── Night security lighting ───────────────────────────────────────────────────
+// Deters nighttime intruders while the household is asleep: within a window
+// (default midnight–5am) it randomly cycles a small set of lights on/off so the
+// house looks occupied and the back of the house is never predictably dark.
+// settings.nightSecurity = { enabled, start:"HH:MM", end:"HH:MM",
+//   backdoor:[{subnet,device,channel}], indoor:[{subnet,device,channel}] }
+// Backdoor lights keep at least one on at all times; indoor lights flip freely.
+let nsActive = false;      // are we currently inside an active window?
+let nsNextShuffle = 0;     // ms epoch of the next re-randomization
+
+function parseHM(s) {
+    const [h, m] = String(s || '0:0').split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+}
+
+function nightSecurityKeys() {
+    const ns = db.settings.nightSecurity;
+    const set = new Set();
+    if (!ns || !ns.enabled) return set;
+    for (const l of [...(ns.backdoor || []), ...(ns.indoor || [])])
+        set.add(lightKey(l.subnet, l.device, l.channel));
+    return set;
+}
+
+async function nsSetLights(lights, wantOnKeys) {
+    let prev = null;
+    for (const l of lights) {
+        const k = lightKey(l.subnet, l.device, l.channel);
+        const want = wantOnKeys.has(k) ? 100 : 0;
+        if (lightState[k] === want) continue;
+        if (prev) await new Promise(r => setTimeout(r, cmdDelay(prev.subnet, prev.device, l.subnet, l.device)));
+        try { await lightCmd(l.subnet, l.device, l.channel, want, true /* skipLog */); } catch {}
+        prev = l;
+    }
+}
+
+async function nsShuffle(ns) {
+    const backdoor = ns.backdoor || [];
+    const indoor   = ns.indoor   || [];
+    const on = new Set();
+    for (const l of indoor)   if (Math.random() < 0.5) on.add(lightKey(l.subnet, l.device, l.channel));
+    for (const l of backdoor) if (Math.random() < 0.6) on.add(lightKey(l.subnet, l.device, l.channel));
+    // Guarantee at least one backdoor light stays on — never a dark back door
+    if (backdoor.length && !backdoor.some(l => on.has(lightKey(l.subnet, l.device, l.channel)))) {
+        const pick = backdoor[Math.floor(Math.random() * backdoor.length)];
+        on.add(lightKey(pick.subnet, pick.device, pick.channel));
+    }
+    await nsSetLights([...backdoor, ...indoor], on);
+}
+
+async function nsAllOff(ns) {
+    await nsSetLights([...(ns.backdoor || []), ...(ns.indoor || [])], new Set());
+}
+
+async function checkNightSecurity() {
+    const ns = db.settings.nightSecurity;
+    if (!ns || !ns.enabled || (!(ns.backdoor || []).length && !(ns.indoor || []).length)) {
+        if (nsActive && ns) { await nsAllOff(ns); }
+        nsActive = false;
+        return;
+    }
+    const tz = db.settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const { minuteOfDay } = nowInTimezone(tz);
+    const s = parseHM(ns.start || '00:00'), e = parseHM(ns.end || '05:00');
+    const inWindow = s <= e ? (minuteOfDay >= s && minuteOfDay < e)
+                            : (minuteOfDay >= s || minuteOfDay < e); // window past midnight
+
+    if (!inWindow) {
+        if (nsActive) {
+            await nsAllOff(ns);
+            nsActive = false;
+            logActivity('nightsec', 'Night security window ended — lights off', {});
+            console.log('[NightSec] Window ended — all simulated lights off');
+        }
+        return;
+    }
+    if (!nsActive) {
+        nsActive = true;
+        nsNextShuffle = 0; // shuffle immediately on entering the window
+        logActivity('nightsec', 'Night security window started', {});
+        console.log('[NightSec] Window started');
+    }
+    if (Date.now() < nsNextShuffle) return;
+    // Jittered 20–40 min so the cadence isn't obviously periodic
+    nsNextShuffle = Date.now() + (20 + Math.random() * 20) * 60000;
+    await nsShuffle(ns);
+    console.log('[NightSec] Shuffled simulated lights');
+}
+setInterval(checkNightSecurity, 60000);
 
 function initLightState() {
     // Load persisted state from last run
