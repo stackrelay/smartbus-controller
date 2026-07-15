@@ -25,6 +25,12 @@ nohup "$NODE" server.js >> "$DIR/server.log" 2>&1 &
 echo "Started server PID $!"
 sleep 2
 if [ -f "$DIR/homekit-bridge.js" ] && [ -f "$DIR/data/homekit.json" ]; then
-  nohup "$NODE" homekit-bridge.js >> "$DIR/homekit.log" 2>&1 &
-  echo "Started homekit bridge PID $!"
+  # The web app comes first on this 716MB box: run the HomeKit bridge at the
+  # lowest CPU priority (nice 19), idle IO class when available, and with a
+  # capped V8 heap so it can never balloon and push the server into swap.
+  IONICE=""
+  command -v ionice >/dev/null 2>&1 && IONICE="ionice -c3"
+  nohup $IONICE nice -n 19 "$NODE" --max-old-space-size=48 --max-semi-space-size=2 \
+    homekit-bridge.js >> "$DIR/homekit.log" 2>&1 &
+  echo "Started homekit bridge PID $! (nice 19, heap-capped)"
 fi

@@ -321,6 +321,14 @@ function saveLightState() {
     try { fs.writeFileSync(LIGHT_STATE_FILE, JSON.stringify(lightState)); } catch (e) {}
 }
 
+// Debounced save — a scene or 0x0034 sync burst changes many channels in a
+// few ms; one write 2s later beats 16 sync writes on an IO-starved box.
+let lightSaveTimer = null;
+function scheduleLightStateSave() {
+    if (lightSaveTimer) return;
+    lightSaveTimer = setTimeout(() => { lightSaveTimer = null; saveLightState(); }, 2000);
+}
+
 // ─── "On too long" alerts ──────────────────────────────────────────────────────
 // Not persisted to disk — on a restart, lights already on just restart their
 // clock from boot time, which is an acceptable simplification for this feature.
@@ -472,8 +480,8 @@ function initLightState() {
     }
 }
 
-// Persist lightState every 60 seconds
-setInterval(saveLightState, 60000);
+// (lightState persistence is debounced per-change via scheduleLightStateSave —
+// no unconditional periodic write; an idle system does zero disk writes.)
 
 // ─── SSE (Server-Sent Events) — real-time push to browser clients ────────────
 const sseClients = new Set();
@@ -494,7 +502,7 @@ async function lightCmd(subnet, device, channel, level, skipLog) {
     const prevLevel = lightState[k];
     const changed = prevLevel !== level;
     lightState[k] = level;
-    if (changed) { saveLightState(); noteLightTransition(k, prevLevel, level); }
+    if (changed) { scheduleLightStateSave(); noteLightTransition(k, prevLevel, level); }
     if (level === 0) cancelTimer(k); // manual off cancels any countdown
     broadcastEvent({ type: 'lightState', key: k, level });
     if (!skipLog) {
@@ -513,7 +521,7 @@ function updateLightState(subnet, device, channel, level, logChange) {
     const prev = lightState[k];
     lightState[k] = level;
     if (prev !== level) {
-        saveLightState();
+        scheduleLightStateSave();
         noteLightTransition(k, prev, level);
         broadcastEvent({ type: 'lightState', key: k, level });
         if (level === 0) cancelTimer(k); // switched off externally (e.g. wall panel)
@@ -865,7 +873,7 @@ async function allOff() {
                 }
         prev = d;
     }
-    saveLightState();
+    scheduleLightStateSave();
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -1176,7 +1184,7 @@ const server = http.createServer(async (req, res) => {
                     prev = d; count++;
                 } catch (e) { console.error('[FloorAllOff]', e.message); }
             }
-            saveLightState();
+            scheduleLightStateSave();
             logActivity('device', `All Off: floor "${floor.name}" (${count} device${count === 1 ? '' : 's'})`, { floorId, floorName: floor.name, count });
             return reply(res, 200, { ok: true, floor: floor.name, count });
         }
@@ -1391,10 +1399,14 @@ function checkBridge() {
         console.log(`[Watchdog] Bridge port ${BRIDGE_PORT} dead — respawning (restart #${bridgeRestarts})`);
         try {
             const out = fs.openSync(path.join(__dirname, 'homekit.log'), 'a');
-            const child = spawn(process.execPath, [BRIDGE_SCRIPT],
+            // Same low-priority, heap-capped launch as restart.sh — the web app
+            // stays responsive; the bridge gets leftovers.
+            const child = spawn(process.execPath,
+                ['--max-old-space-size=48', '--max-semi-space-size=2', BRIDGE_SCRIPT],
                 { cwd: __dirname, detached: true, stdio: ['ignore', out, out] });
             child.unref();
             fs.closeSync(out);
+            try { require('os').setPriority(child.pid, 19); } catch {}
             logActivity('system', 'HomeKit bridge restarted by watchdog', { restarts: bridgeRestarts });
         } catch (e) {
             console.error('[Watchdog] Failed to spawn bridge:', e.message);

@@ -259,7 +259,7 @@ async function main() {
             const s = await api('GET', '/api/state');
             if (s) handleEvent({ type: 'init', lightState: s });
         } catch {}
-    }, 5 * 60 * 1000);
+    }, 15 * 60 * 1000); // SSE is the primary sync; this is only a safety net — keep it cheap
 }
 
 main().catch(e => { console.error('[HomeKit] Fatal:', e.message); process.exit(1); });
