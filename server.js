@@ -212,6 +212,7 @@ function cancelTimer(k) {
 }
 
 async function checkTimers() {
+    if (!server.listening) return; // only the process that holds :3003 actuates devices
     const now = Date.now();
     for (const k of Object.keys(timers)) {
         const t = timers[k];
@@ -424,6 +425,7 @@ async function nsAllOff(ns) {
 }
 
 async function checkNightSecurity() {
+    if (!server.listening) return; // only the port-holder actuates — never a still-starting duplicate
     const ns = db.settings.nightSecurity;
     if (!ns || !ns.enabled || (!(ns.backdoor || []).length && !(ns.indoor || []).length)) {
         if (nsActive && ns) { await nsAllOff(ns); }
@@ -761,6 +763,7 @@ function tzOffsetMinutes(tz) {
 }
 
 async function checkSchedules() {
+    if (!server.listening) return; // only the port-holder actuates — never a still-starting duplicate
     const now = new Date();
     const tz = db.settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
     const { minuteOfDay: nowMinute, day } = nowInTimezone(tz);
@@ -1426,6 +1429,19 @@ startUdpListener();
 
 // Refresh device states every 5 minutes in case something changed externally
 setInterval(queryDeviceStates, 5 * 60 * 1000);
+
+// Lose the port race → exit immediately, before any timer (scheduler, night
+// security) can fire. This makes a duplicate that supervise.sh spawned during
+// a slow startup harmless: it dies in milliseconds instead of lingering as a
+// second engine that double-runs night security.
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`[Boot] Port ${SERVER_PORT} already in use — another server is running. Exiting.`);
+        process.exit(0);
+    }
+    console.error('[Boot] HTTP server error:', err.message);
+    process.exit(1);
+});
 
 server.listen(SERVER_PORT, LISTEN_IP, () => {
     console.log(`Smart-Bus G4 server on http://localhost:${SERVER_PORT}`);
