@@ -20,6 +20,22 @@ kill_port() {
 kill_port 0BBB   # smartbus server :3003
 kill_port CA72   # homekit bridge  :51826
 
+# Also kill stale copies that never bound their port — swap storms leave
+# wedged server.js/bridge processes lingering unbound (3 found 2026-07-16),
+# and port-based kills can't see them. Match by cwd + script name; never by
+# bare pattern (the pkill self-match trap).
+for p in $(ls /proc | grep "^[0-9]*$"); do
+  [ "$p" = "$$" ] && continue
+  cwd=$(readlink /proc/$p/cwd 2>/dev/null)
+  [ "$cwd" = "$DIR" ] || continue
+  c=$(tr "\0" " " < /proc/$p/cmdline 2>/dev/null)
+  case "$c" in
+    *node*server.js*|*node*homekit-bridge.js*)
+      kill $p 2>/dev/null && echo "Killed stale PID $p";;
+  esac
+done
+sleep 1
+
 cd "$DIR"
 nohup "$NODE" server.js >> "$DIR/server.log" 2>&1 &
 echo "Started server PID $!"
